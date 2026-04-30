@@ -7,8 +7,9 @@ plugins {
 
 android {
     namespace = "com.smriti.app.smriti"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    compileSdk = 34
+    buildToolsVersion = "36.0.0"
+    ndkVersion = "25.1.8937393"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -22,9 +23,9 @@ android {
     defaultConfig {
         applicationId = "com.smriti.app.smriti"
         minSdk = 24  // Required for native library support
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0.0"
         
         // Native library configuration
         ndk {
