@@ -313,6 +313,5 @@ flutter build apk --release --split-per-abi
 
 ---
 
-**Current Version**: 1.0.0 (Week 2)  
-**Target**: Google Play Store  
-**Timeline**: Week 9 (June 30)
+**Current Version**: 1.0.0  
+**Target**: Google Play Store
