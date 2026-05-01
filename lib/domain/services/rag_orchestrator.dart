@@ -2,6 +2,7 @@ import '../../core/services/embedding_service.dart';
 import '../../core/services/llm_service.dart';
 import '../../core/services/model_manager.dart';
 import '../../data/models/objectbox_chunk.dart';
+import '../../data/models/objectbox_document.dart';
 import '../../data/objectbox_store.dart';
 import '../entities/document.dart';
 import '../entities/document_chunk.dart';
@@ -174,7 +175,7 @@ class RAGOrchestrator {
       );
     } catch (e) {
       // Fallback to placeholder if LLM fails
-      answer = _generatePlaceholderAnswer(query, relevantChunks, citations);
+      answer = _generatePlaceholderAnswer(query, relevantChunks, citations).answer;
     }
     
     // Calculate confidence based on number and quality of chunks

@@ -33,7 +33,7 @@ dependencies:
 
   # UI and utilities
   cupertino_icons: ^1.0.8
-  file_picker: ^6.1.1
+  file_picker: ^11.0.2
   path_provider: ^2.1.1
   permission_handler: ^11.3.0
   shared_preferences: ^2.2.2
@@ -51,7 +51,7 @@ dependencies:
   # Vector database and ML
   objectbox: ^2.5.0
   objectbox_flutter_libs: ^2.5.0
-  tflite_flutter: ^0.10.4
+  tflite_flutter: ^0.12.1
 
   # Storage
   hive: ^2.2.3

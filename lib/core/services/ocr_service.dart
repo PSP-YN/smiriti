@@ -360,8 +360,8 @@ class OCRService {
     final allBlocks = results.expand((r) => r.blocks).toList();
 
     // Average confidence
-    final avgConfidence = results.isEmpty 
-        ? 0 
+    final double avgConfidence = results.isEmpty
+        ? 0.0
         : results.map((r) => r.confidence).reduce((a, b) => a + b) / results.length;
 
     return OCRResult(

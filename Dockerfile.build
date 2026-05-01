@@ -1,0 +1,42 @@
+FROM openjdk:17-jdk-slim
+
+# Install required dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    unzip \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Android SDK
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+
+RUN wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip && \
+    mkdir -p $ANDROID_SDK_ROOT/cmdline-tools && \
+    unzip cmdline-tools.zip -d $ANDROID_SDK_ROOT/cmdline-tools && \
+    mv $ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest && \
+    rm cmdline-tools.zip
+
+# Install Android SDK components
+RUN yes | $SDKMANAGER --sdk_root=$ANDROID_SDK_ROOT "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+
+# Install Flutter
+ENV FLUTTER_ROOT=/opt/flutter
+ENV PATH="$PATH:$FLUTTER_ROOT/bin"
+
+RUN wget -q https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.24.5-stable.tar.xz -O flutter.tar.xz && \
+    tar -xf flutter.tar.xz -C /opt && \
+    rm flutter.tar.xz
+
+# Set working directory
+WORKDIR /app
+
+# Copy project files
+COPY . .
+
+# Build the app
+RUN flutter pub get && flutter build apk --release
+
+# Output the APK
+CMD ["cp", "build/app/outputs/flutter-apk/app-release.apk", "/output/"]
