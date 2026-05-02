@@ -81,7 +81,7 @@ class DocumentRepositoryImpl implements DocumentRepository {
       content: obChunk.content,
       pageNumber: obChunk.pageNumber,
       position: obChunk.position,
-      embedding: obChunk.embedding,
+      embedding: obChunk.embeddingFloats,
       createdAt: DateTime.parse(obChunk.createdAt),
     )).toList();
   }
@@ -127,7 +127,7 @@ class DocumentRepositoryImpl implements DocumentRepository {
       content: sc.chunk.content,
       pageNumber: sc.chunk.pageNumber,
       position: sc.chunk.position,
-      embedding: sc.chunk.embedding,
+      embedding: sc.chunk.embeddingFloats,
       createdAt: DateTime.parse(sc.chunk.createdAt),
     )).toList();
   }

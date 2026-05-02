@@ -229,7 +229,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const ListTile(
             leading: Icon(Icons.info),
             title: Text('Version'),
-            subtitle: Text('1.0.0 (Week 2 Build)'),
+            subtitle: Text('1.0.0 (Build 1)'),
           ),
           const ListTile(
             leading: Icon(Icons.privacy_tip),

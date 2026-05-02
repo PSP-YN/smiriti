@@ -66,7 +66,7 @@ class RAGOrchestrator {
       
       final similarity = EmbeddingService.cosineSimilarity(
         queryEmbedding,
-        chunk.embedding!,
+        chunk.embeddingFloats!,
       );
       
       if (similarity >= threshold) {
@@ -85,7 +85,7 @@ class RAGOrchestrator {
       content: scored.chunk.content,
       pageNumber: scored.chunk.pageNumber,
       position: scored.chunk.position,
-      embedding: scored.chunk.embedding,
+      embedding: scored.chunk.embeddingFloats,
       createdAt: DateTime.parse(scored.chunk.createdAt),
     )).toList();
   }
@@ -250,7 +250,7 @@ class RAGOrchestrator {
 
     // Update chunks with embeddings and store
     for (var i = 0; i < chunks.length; i++) {
-      chunks[i].embedding = embeddings[i];
+      chunks[i].embeddingFloats = embeddings[i];
     }
 
     ObjectBoxStore.insertChunks(chunks);

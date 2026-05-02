@@ -51,11 +51,8 @@ class _SummarizePageState extends State<SummarizePage> {
     });
 
     try {
-      // Get all chunks for the document
-      final allChunks = <Map<String, dynamic>>[];
-      
       // In a real implementation, we'd retrieve all document content
-      // For now, we'll create a simulated summary
+      // For now, we'll create a simulated summary until LLM integration is complete
       await Future.delayed(const Duration(seconds: 2));
 
       final docName = _selectedDocument!.name;
