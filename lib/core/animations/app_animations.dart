@@ -126,20 +126,33 @@ class _AnimatedLogoState extends State<AnimatedLogo>
             width: widget.size,
             height: widget.size,
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary,
-              borderRadius: BorderRadius.circular(widget.size * 0.2),
+              borderRadius: BorderRadius.circular(widget.size * 0.22),
               boxShadow: [
                 BoxShadow(
-                  color: Theme.of(context).colorScheme.primary.withAlpha(100),
-                  blurRadius: 20,
-                  spreadRadius: 5,
+                  color: Theme.of(context).colorScheme.primary.withAlpha(90),
+                  blurRadius: 24,
+                  spreadRadius: 4,
                 ),
               ],
             ),
-            child: Icon(
-              Icons.menu_book,
-              size: widget.size * 0.5,
-              color: Colors.white,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(widget.size * 0.22),
+              child: Image.asset(
+                'assets/images/app_logo.png',
+                width: widget.size,
+                height: widget.size,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  width: widget.size,
+                  height: widget.size,
+                  color: Theme.of(context).colorScheme.primary,
+                  child: Icon(
+                    Icons.psychology,
+                    size: widget.size * 0.5,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
             ),
           ),
         );

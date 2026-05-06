@@ -2,7 +2,6 @@ import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart';
 
-/// Centralized error handling service
 class ErrorHandler {
   static void handleError(
     Object error,
@@ -10,9 +9,8 @@ class ErrorHandler {
     String? context,
     bool fatal = false,
   }) {
-    final message = context != null ? '[$context] $error' : error.toString();
-    
     if (kDebugMode) {
+      final message = context != null ? '[$context] $error' : error.toString();
       developer.log(
         message,
         error: error,
@@ -20,23 +18,23 @@ class ErrorHandler {
         level: fatal ? 1000 : 800,
       );
     }
-    
-    // TODO: Add crash reporting service integration (e.g., Firebase Crashlytics)
   }
-  
+
   static void logInfo(String message, {String? context}) {
-    final fullMessage = context != null ? '[$context] $message' : message;
-    
     if (kDebugMode) {
-      developer.log(fullMessage, level: 500);
+      developer.log(
+        context != null ? '[$context] $message' : message,
+        level: 500,
+      );
     }
   }
-  
+
   static void logWarning(String message, {String? context}) {
-    final fullMessage = context != null ? '[$context] $message' : message;
-    
     if (kDebugMode) {
-      developer.log(fullMessage, level: 700);
+      developer.log(
+        context != null ? '[$context] $message' : message,
+        level: 700,
+      );
     }
   }
 }

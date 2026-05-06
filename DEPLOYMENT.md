@@ -1,317 +1,187 @@
-# Deployment Guide
+# Smriti — Deployment Guide
 
-## Prerequisites
+**Version:** 1.0.0 (Build 1)  
+**Platform:** Android 5.0+ (API 21+)  
+**Architecture:** Flutter + ObjectBox + ML Kit + TFLite
 
-- Flutter SDK 3.11.5 or later
-- Android SDK (API 21+)
-- Android Studio / Xcode
-- Signing keystore (for release)
+---
 
-## Development Environment Setup
+## Build Outputs
 
-### 1. Install Flutter
+| Artifact | Path | Size |
+|----------|------|------|
+| APK (sideload / test) | `build/app/outputs/flutter-apk/app-release.apk` | ~50 MB |
+| AAB (Play Store) | `build/app/outputs/bundle/release/app-release.aab` | ~58 MB |
 
-```bash
-git clone https://github.com/flutter/flutter.git -b stable
-export PATH="$PATH:`pwd`/flutter/bin"
-flutter doctor
-```
+---
 
-### 2. Install Dependencies
+## Quick Install (Sideload)
 
 ```bash
-cd smriti
-flutter pub get
+# Connect Android phone with USB debugging enabled
+adb install build/app/outputs/flutter-apk/app-release.apk
 ```
 
-### 3. Initialize ObjectBox
+**Requirements:** Android 5.0+ (API 21), 50–4000 MB free storage.
 
-```bash
-dart run build_runner build
-```
+---
 
-## Build Configurations
+## Google Play Store Submission
 
-### Debug Build (Development)
+### Step 1 — Create Release Keystore
 
-```bash
-flutter build apk --debug
-```
-
-**Output**: `build/app/outputs/flutter-apk/app-debug.apk`
-
-### Profile Build (Performance Testing)
-
-```bash
-flutter build apk --profile
-```
-
-### Release Build (Production)
-
-```bash
-flutter build apk --release
-```
-
-**Output**: `build/app/outputs/flutter-apk/app-release.apk`
-
-## Android Signing
-
-### Create Keystore
+> Do this once. Store the keystore file safely — it cannot be recovered.
 
 ```bash
 keytool -genkey -v \
-  -keystore smriti-release-key.jks \
-  -keyalg RSA \
-  -keysize 2048 \
+  -keystore ~/smriti-release.jks \
+  -keyalg RSA -keysize 2048 \
   -validity 10000 \
   -alias smriti
 ```
 
-### Configure Signing
+### Step 2 — Configure Signing
 
-Create `android/key.properties`:
+In `android/app/build.gradle`, add inside `android {}`:
 
-```properties
-storePassword=YOUR_STORE_PASSWORD
-keyPassword=YOUR_KEY_PASSWORD
-keyAlias=smriti
-storeFile=../smriti-release-key.jks
-```
-
-Update `android/app/build.gradle`:
-
-```gradle
-android {
-    ...
-    signingConfigs {
-        release {
-            keyAlias keystoreProperties['keyAlias']
-            keyPassword keystoreProperties['keyPassword']
-            storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
-            storePassword keystoreProperties['storePassword']
-        }
+```groovy
+signingConfigs {
+    release {
+        keyAlias      System.getenv("KEY_ALIAS")        ?: "smriti"
+        keyPassword   System.getenv("KEY_PASSWORD")     ?: ""
+        storeFile     file(System.getenv("KEYSTORE_PATH") ?: "~/smriti-release.jks")
+        storePassword System.getenv("STORE_PASSWORD")   ?: ""
     }
-    buildTypes {
-        release {
-            signingConfig signingConfigs.release
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
+}
+buildTypes {
+    release {
+        signingConfig signingConfigs.release
+        minifyEnabled true
+        proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
     }
 }
 ```
 
-## App Bundle (Play Store)
+### Step 3 — Build Signed AAB
 
 ```bash
+export KEY_ALIAS=smriti
+export KEY_PASSWORD=<your-key-password>
+export KEYSTORE_PATH=~/smriti-release.jks
+export STORE_PASSWORD=<your-store-password>
+
 flutter build appbundle --release
 ```
 
-**Output**: `build/app/outputs/bundle/release/app-release.aab`
+### Step 4 — Play Console Checklist
 
-## Play Store Submission
-
-### 1. Prepare Assets
-
-- **App Icon**: 512x512 PNG
-- **Feature Graphic**: 1024x500 PNG
-- **Screenshots**: Phone (1080x1920) x 8, Tablet (2732x2048) x 8
-- **Privacy Policy**: Link to hosted policy
-
-### 2. App Information
-
-| Field | Value |
-|-------|-------|
-| App Name | Smriti |
-| Short Description | Offline AI notebook for your documents |
-| Full Description | (See below) |
-| Category | Education / Productivity |
-| Content Rating | Everyone |
-
-**Full Description**:
-```
-Smriti - Your second memory, on your phone.
-
-Turn your textbooks, notes, and documents into a searchable knowledge base that works completely offline.
-
-KEY FEATURES:
-✓ 100% Offline - No internet required
-✓ Privacy First - Your data never leaves your device
-✓ AI-Powered Search - Ask questions in natural language
-✓ Multi-Format - PDF, TXT, images, audio
-✓ Citations - See exactly where answers come from
-
-PERFECT FOR:
-• Students preparing for exams
-• Researchers organizing papers
-• Professionals managing documents
-• Anyone who values privacy
-
-HOW IT WORKS:
-1. Add your documents
-2. Smriti indexes them with AI
-3. Ask questions naturally
-4. Get answers with sources
-
-No accounts. No subscriptions. No data collection.
-
-TECHNOLOGY:
-• On-device AI (Gemma 2B)
-• Semantic search with vector embeddings
-• Local LLM inference
-• Military-grade encryption
-
-Download once, use forever - even on airplane mode.
-```
-
-### 3. Content Rating
-
-- Violence: None
-- Sexual Content: None
-- Language: None
-- Controlled Substances: None
-
-### 4. Privacy Policy
-
-Required text:
-```
-Smriti Privacy Policy
-
-Last Updated: [Date]
-
-Smriti does not collect, store, or transmit any personal data. 
-All document processing happens on your device.
-
-Data Storage:
-- Documents are stored locally on your device
-- AI models run entirely offline
-- No cloud servers are used
-- No analytics or tracking
-
-Permissions:
-- Storage: To read your documents
-- Biometric: For optional app lock
-
-Contact: privacy@smriti.app
-```
-
-### 5. App Review Checklist
-
-- [ ] App icon meets guidelines
-- [ ] No copyrighted material in screenshots
-- [ ] Privacy policy URL valid
-- [ ] Contact email provided
-- [ ] Tested on target devices (Android 8+)
-- [ ] App size under 200MB (APK) / 150MB (base)
-
-## Release Checklist
-
-### Pre-Build
-
-- [ ] Version updated in `pubspec.yaml`
-- [ ] Changelog updated
-- [ ] Security audit complete
-- [ ] All tests passing
-
-### Build
-
-- [ ] Release APK builds successfully
-- [ ] App bundle generated
-- [ ] Signed with release key
-- [ ] ProGuard mapping saved
-
-### Testing
-
-- [ ] Fresh install test
-- [ ] Document upload test
-- [ ] Chat/query test
-- [ ] Offline mode test
-- [ ] Biometric auth test
-- [ ] Low-memory device test
-
-### Submission
-
-- [ ] Screenshots uploaded
-- [ ] Store listing complete
-- [ ] Privacy policy linked
-- [ ] Content rating complete
-- [ ] Pricing set (Free)
-- [ ] Countries selected
-
-## CI/CD Setup (GitHub Actions)
-
-```yaml
-# .github/workflows/release.yml
-name: Build Release
-
-on:
-  push:
-    tags:
-      - 'v*'
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.11.5'
-      
-      - name: Get dependencies
-        run: flutter pub get
-      
-      - name: Build APK
-        run: flutter build apk --release
-      
-      - name: Build AppBundle
-        run: flutter build appbundle --release
-      
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: release
-          path: |
-            build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/bundle/release/app-release.aab
-```
-
-## Troubleshooting
-
-### Build Errors
-
-**Error**: `Duplicate class found`
-**Fix**: Run `flutter clean && flutter pub get`
-
-**Error**: `Keystore file not found`
-**Fix**: Verify `key.properties` path is correct
-
-**Error**: `ObjectBox not generated`
-**Fix**: Run `dart run build_runner build --delete-conflicting-outputs`
-
-### Size Issues
-
-If APK > 200MB:
-```bash
-flutter build apk --release --split-per-abi
-```
-
-## Post-Launch
-
-### Monitoring
-
-- Crashlytics integration (optional, opt-in)
-- Google Play Console analytics
-- User feedback collection
-
-### Updates
-
-- Semantic versioning (MAJOR.MINOR.PATCH)
-- Release notes in changelog
-- Gradual rollout (staged releases)
+- [ ] Upload `app-release.aab` to **Production** or **Internal Testing** track
+- [ ] Screenshots: phone (min 2), 7-inch tablet (optional)
+- [ ] Short description (80 chars): *"Offline AI notebook — ask questions about your PDFs and documents."*
+- [ ] Content rating: **Everyone** (no user content, no violence)
+- [ ] **Data safety form:** select *"No data collected"* — app is fully offline
+- [ ] Privacy policy URL — host the text from the in-app Privacy Policy page
+- [ ] Category: **Productivity**
 
 ---
 
-**Current Version**: 1.0.0  
-**Target**: Google Play Store
+## Rebuild Commands
+
+```bash
+# Clean rebuild (if errors after code changes)
+flutter clean && flutter pub get && flutter build apk --release
+
+# Debug run (hot reload)
+flutter run
+
+# Release APK
+flutter build apk --release
+
+# Release AAB (Play Store)
+flutter build appbundle --release
+
+# Code analysis (should show 0 errors, 0 warnings)
+flutter analyze
+```
+
+---
+
+## Feature Status
+
+### Works Fully (No Downloads Required)
+
+| Feature | Detail |
+|---------|--------|
+| PDF import & text extraction | Syncfusion PDF |
+| Image OCR (camera + gallery) | ML Kit, fully offline |
+| Document management | Add, delete, list |
+| App Lock + Biometrics | Enforced on every cold start |
+| Dark / Light mode | Follows system preference |
+| Privacy Policy page | Full in-app page |
+| Clear All Data | Wipes ObjectBox + files + models |
+| Storage usage display | Real disk size shown |
+| Copy summary to clipboard | Working |
+
+### Requires First-Time Model Download
+
+| Feature | Model | Size |
+|---------|-------|------|
+| AI chat answers | Gemma 2B Q4 or Llama 3.2 1B Q4 | 800 MB – 1.4 GB |
+| Semantic search | all-MiniLM-L6-v2 (embedding) | ~25 MB |
+| Audio transcription | Whisper Tiny | ~75 MB |
+
+Download from: **Settings → AI Models → Download**
+
+---
+
+## Security Summary
+
+| Control | Implementation |
+|---------|---------------|
+| Data storage | Android EncryptedSharedPreferences (AES-GCM) |
+| Keystore | RSA-OAEP-SHA-256 |
+| App lock | Biometric gate enforced on every cold start |
+| Biometric | `local_auth` with PIN/pattern fallback |
+| Password hashing | SHA-256 + 16-byte random salt |
+| Network | HTTPS-only via `network_security_config.xml` |
+| Backup | `allowBackup=false` — blocks ADB backup |
+| File access | Scoped storage (no MANAGE_EXTERNAL_STORAGE) |
+
+---
+
+## Architecture
+
+```
+lib/
+├── core/
+│   ├── animations/       # Reusable animation widgets
+│   ├── constants/        # AppConstants (version, keys, extensions)
+│   ├── di/               # GetIt dependency injection
+│   ├── services/         # App-level services (auth, models, OCR, LLM)
+│   └── theme/            # Light + dark MaterialTheme
+├── data/
+│   ├── datasources/      # SharedPreferences + file I/O
+│   ├── models/           # ObjectBox entity models
+│   ├── objectbox_store.dart
+│   └── repositories/     # DocumentRepository implementation
+├── domain/
+│   ├── entities/         # Pure Dart domain models
+│   ├── repositories/     # Abstract interfaces
+│   └── services/         # RAG orchestrator (retrieve + generate)
+└── presentation/
+    ├── bloc/             # DocumentBloc (events, states)
+    ├── pages/            # All screens
+    └── widgets/          # Reusable UI components
+```
+
+---
+
+## Environment
+
+| Tool | Version |
+|------|---------|
+| Flutter | 3.19+ |
+| Dart | 3.3+ |
+| Android minSdk | 21 (Android 5.0) |
+| Android targetSdk | 34 (Android 14) |
+| Build tool | Gradle + R8 minification |

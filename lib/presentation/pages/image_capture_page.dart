@@ -16,41 +16,43 @@ class ImageCapturePage extends StatefulWidget {
 }
 
 class _ImageCapturePageState extends State<ImageCapturePage> {
-  final ImagePicker _picker = ImagePicker();
+  final _picker = ImagePicker();
   bool _isProcessing = false;
   String _status = '';
 
-  @override
-  void initState() {
-    super.initState();
-    _checkPermissions();
-  }
-
-  Future<void> _checkPermissions() async {
-    final cameraStatus = await Permission.camera.request();
-    final storageStatus = await Permission.storage.request();
-    
-    if (!cameraStatus.isGranted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Camera permission required')),
-        );
+  Future<void> _captureImage(ImageSource source) async {
+    // Request camera permission if using camera
+    if (source == ImageSource.camera) {
+      final cameraStatus = await Permission.camera.request();
+      if (!cameraStatus.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Camera permission is required'),
+              action: SnackBarAction(
+                label: 'Settings',
+                onPressed: openAppSettings,
+              ),
+            ),
+          );
+        }
+        return;
       }
     }
-  }
 
-  Future<void> _captureImage(ImageSource source) async {
     setState(() {
       _isProcessing = true;
-      _status = 'Capturing image...';
+      _status = source == ImageSource.camera
+          ? 'Opening camera...'
+          : 'Opening gallery...';
     });
 
     try {
-      final XFile? photo = await _picker.pickImage(
+      final photo = await _picker.pickImage(
         source: source,
         maxWidth: 2048,
         maxHeight: 2048,
-        imageQuality: 90,
+        imageQuality: 92,
       );
 
       if (photo == null) {
@@ -61,44 +63,37 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
         return;
       }
 
-      setState(() {
-        _status = 'Processing image...';
-      });
+      setState(() => _status = 'Saving image...');
 
-      // Copy to app documents
       final appDir = await getApplicationDocumentsDirectory();
       final documentsDir = Directory('${appDir.path}/documents');
       if (!await documentsDir.exists()) {
         await documentsDir.create(recursive: true);
       }
 
-      final id = DateTime.now().millisecondsSinceEpoch.toString();
-      final ext = photo.name.split('.').last;
-      final newFileName = '${id}_captured.$ext';
-      final newPath = '${documentsDir.path}/$newFileName';
+      final id = DateTime.now().millisecondsSinceEpoch;
+      final ext = photo.name.split('.').last.toLowerCase();
+      final destPath = '${documentsDir.path}/${id}_capture.$ext';
+      await File(photo.path).copy(destPath);
 
-      await File(photo.path).copy(newPath);
-
-      // Add to bloc
-      if (context.mounted) {
-        final file = File(newPath);
-        context.read<DocumentBloc>().add(AddDocument(file));
-        
+      if (mounted) {
+        context.read<DocumentBloc>().add(AddDocument(File(destPath)));
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Image captured and processing...')),
+          const SnackBar(
+            content: Text('Image captured — extracting text...'),
+            duration: Duration(seconds: 2),
+          ),
         );
-        
         Navigator.pop(context);
       }
     } catch (e) {
-      setState(() {
-        _status = 'Error: $e';
-        _isProcessing = false;
-      });
-      
       if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _status = '';
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(content: Text('Error: ${e.toString().split('\n').first}')),
         );
       }
     }
@@ -106,9 +101,11 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Capture Image'),
+        title: const Text('Capture Document'),
         centerTitle: true,
       ),
       body: Padding(
@@ -119,7 +116,7 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
             Icon(
               Icons.document_scanner,
               size: 80,
-              color: Theme.of(context).colorScheme.primary.withAlpha(150),
+              color: colorScheme.primary.withAlpha(140),
             ),
             const SizedBox(height: 24),
             const Text(
@@ -128,21 +125,23 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Text will be extracted using OCR',
+              'Text will be automatically extracted using OCR',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
-                color: Theme.of(context).colorScheme.onSurface.withAlpha(150),
+                color: colorScheme.onSurface.withAlpha(150),
               ),
             ),
-            const SizedBox(height: 32),
-            
+            const SizedBox(height: 40),
             if (_isProcessing)
               Column(
                 children: [
                   const CircularProgressIndicator(),
                   const SizedBox(height: 16),
-                  Text(_status),
+                  Text(
+                    _status,
+                    style: TextStyle(color: colorScheme.onSurface.withAlpha(160)),
+                  ),
                 ],
               )
             else
@@ -150,6 +149,7 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
                 children: [
                   SizedBox(
                     width: double.infinity,
+                    height: 52,
                     child: FilledButton.icon(
                       onPressed: () => _captureImage(ImageSource.camera),
                       icon: const Icon(Icons.camera_alt),
@@ -159,6 +159,7 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
+                    height: 52,
                     child: OutlinedButton.icon(
                       onPressed: () => _captureImage(ImageSource.gallery),
                       icon: const Icon(Icons.photo_library),
@@ -167,14 +168,12 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
                   ),
                 ],
               ),
-            
-            const SizedBox(height: 24),
-            
+            const SizedBox(height: 32),
             // Tips
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer.withAlpha(50),
+                color: colorScheme.primaryContainer.withAlpha(40),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -182,28 +181,25 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
                 children: [
                   Row(
                     children: [
-                      Icon(
-                        Icons.lightbulb,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
+                      Icon(Icons.lightbulb_outline,
+                          size: 16, color: colorScheme.primary),
                       const SizedBox(width: 8),
                       Text(
-                        'Tips for best results',
+                        'Tips for best OCR results',
                         style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.primary,
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    '• Ensure good lighting\n'
-                    '• Keep the document flat\n'
+                    '• Ensure good, even lighting\n'
+                    '• Keep the document flat and level\n'
                     '• Avoid shadows and glare\n'
-                    '• Make sure text is clearly visible',
-                    style: TextStyle(fontSize: 12),
+                    '• Make sure all text is within the frame',
+                    style: TextStyle(fontSize: 13, height: 1.6),
                   ),
                 ],
               ),

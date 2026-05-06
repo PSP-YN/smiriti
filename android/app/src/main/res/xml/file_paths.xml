@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- App-private documents directory -->
+    <files-path name="app_documents" path="documents/" />
+    <!-- App cache for temp files -->
+    <cache-path name="cache" path="." />
+</paths>

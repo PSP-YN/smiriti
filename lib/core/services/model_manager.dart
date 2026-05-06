@@ -84,31 +84,31 @@ class ModelManager {
   
   // Model definitions
   static final List<ModelInfo> availableModels = [
-    ModelInfo(
+    const ModelInfo(
       id: 'gemma-2b-q4',
       name: 'Gemma 2B (Q4)',
       description: 'Google Gemma 2B quantized to 4-bit. Fast and accurate for most queries.',
-      sizeBytes: 1370000000, // ~1.3 GB
+      sizeBytes: 1370000000,
       downloadUrl: 'https://huggingface.co/google/gemma-2b/resolve/main/gemma-2b-q4.gguf',
       checksum: 'sha256_placeholder',
       isDefault: true,
       minRamMB: 6144,
     ),
-    ModelInfo(
+    const ModelInfo(
       id: 'llama-3.2-1b-q4',
       name: 'Llama 3.2 1B (Q4)',
       description: 'Meta Llama 3.2 1B quantized. Smaller footprint, good for 4-6GB RAM devices.',
-      sizeBytes: 700000000, // ~700 MB
+      sizeBytes: 700000000,
       downloadUrl: 'https://huggingface.co/meta/llama-3.2-1b/resolve/main/llama-3.2-1b-q4.gguf',
       checksum: 'sha256_placeholder',
       isFallback: true,
       minRamMB: 4096,
     ),
-    ModelInfo(
+    const ModelInfo(
       id: 'phi-3-mini-q4',
       name: 'Phi-3 Mini (Q4)',
       description: 'Microsoft Phi-3 Mini. Excellent reasoning capabilities.',
-      sizeBytes: 1900000000, // ~1.9 GB
+      sizeBytes: 1900000000,
       downloadUrl: 'https://huggingface.co/microsoft/phi-3-mini/resolve/main/phi-3-mini-q4.gguf',
       checksum: 'sha256_placeholder',
       minRamMB: 8192,

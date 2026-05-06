@@ -343,7 +343,7 @@ class _ModelDownloadPageState extends State<ModelDownloadPage> {
   void _showStorageDetails(Map<String, dynamic> info) {
     showModalBottomSheet(
       context: context,
-      builder: (context) => Container(
+      builder: (context) => Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -358,13 +358,14 @@ class _ModelDownloadPageState extends State<ModelDownloadPage> {
               const Text('No models downloaded yet.')
             else
               ...((info['models'] as List).map((m) => ListTile(
-                    title: Text(m['name']),
+                    title: Text(m['name'] as String),
                     subtitle: Text('${m['sizeMB']} MB'),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete),
                       onPressed: () async {
-                        await ModelManager.deleteModel(m['id']);
-                        Navigator.pop(context);
+                        final nav = Navigator.of(context);
+                        await ModelManager.deleteModel(m['id'] as String);
+                        nav.pop();
                         _loadModels();
                       },
                     ),

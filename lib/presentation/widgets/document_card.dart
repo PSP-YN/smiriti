@@ -2,16 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../domain/entities/document.dart';
+import '../pages/chat_page.dart';
 import '../pages/summarize_page.dart';
 
 class DocumentCard extends StatelessWidget {
   final Document document;
   final VoidCallback onDelete;
+  final VoidCallback? onTap;
 
   const DocumentCard({
     super.key,
     required this.document,
     required this.onDelete,
+    this.onTap,
   });
 
   IconData get _fileIcon {
@@ -19,22 +22,18 @@ class DocumentCard extends StatelessWidget {
       case 'pdf':
         return Icons.picture_as_pdf;
       case 'txt':
-      case 'doc':
-      case 'docx':
         return Icons.description;
       case 'png':
       case 'jpg':
       case 'jpeg':
       case 'webp':
       case 'bmp':
-      case 'gif':
         return Icons.image;
       case 'mp3':
       case 'wav':
       case 'm4a':
       case 'aac':
       case 'ogg':
-      case 'flac':
         return Icons.audio_file;
       default:
         return Icons.insert_drive_file;
@@ -46,22 +45,18 @@ class DocumentCard extends StatelessWidget {
       case 'pdf':
         return Colors.red;
       case 'txt':
-      case 'doc':
-      case 'docx':
         return Colors.blue;
       case 'png':
       case 'jpg':
       case 'jpeg':
       case 'webp':
       case 'bmp':
-      case 'gif':
         return Colors.green;
       case 'mp3':
       case 'wav':
       case 'm4a':
       case 'aac':
       case 'ogg':
-      case 'flac':
         return Colors.purple;
       default:
         return Colors.grey;
@@ -71,15 +66,23 @@ class DocumentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('MMM d, yyyy');
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
+      elevation: 1,
       child: InkWell(
-        onTap: () {
-          // TODO: Navigate to document viewer
-        },
+        onTap: onTap ??
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ChatPage(initialDocumentId: document.id),
+                ),
+              );
+            },
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -88,42 +91,73 @@ class DocumentCard extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: _fileColor.withAlpha(20),
+                      color: _fileColor.withAlpha(25),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Icon(
-                      _fileIcon,
-                      color: _fileColor,
-                      size: 28,
-                    ),
+                    child: Icon(_fileIcon, color: _fileColor, size: 26),
                   ),
                   const Spacer(),
                   PopupMenuButton<String>(
+                    icon: Icon(
+                      Icons.more_vert,
+                      size: 20,
+                      color: colorScheme.onSurface.withAlpha(150),
+                    ),
                     onSelected: (value) {
-                      if (value == 'delete') {
-                        _showDeleteDialog(context);
-                      } else if (value == 'summarize') {
-                        _openSummarize(context);
+                      switch (value) {
+                        case 'chat':
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  ChatPage(initialDocumentId: document.id),
+                            ),
+                          );
+                        case 'summarize':
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  SummarizePage(documentId: document.id),
+                            ),
+                          );
+                        case 'delete':
+                          _showDeleteDialog(context);
                       }
                     },
                     itemBuilder: (context) => [
                       PopupMenuItem(
+                        value: 'chat',
+                        child: Row(
+                          children: [
+                            Icon(Icons.chat_bubble_outline,
+                                color: colorScheme.primary, size: 18),
+                            const SizedBox(width: 10),
+                            const Text('Ask AI'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
                         value: 'summarize',
                         child: Row(
                           children: [
-                            Icon(Icons.summarize, color: Theme.of(context).colorScheme.primary, size: 20),
-                            const SizedBox(width: 8),
+                            Icon(Icons.auto_awesome,
+                                color: colorScheme.tertiary, size: 18),
+                            const SizedBox(width: 10),
                             const Text('Summarize'),
                           ],
                         ),
                       ),
+                      const PopupMenuDivider(),
                       const PopupMenuItem(
                         value: 'delete',
                         child: Row(
                           children: [
-                            Icon(Icons.delete, color: Colors.red, size: 20),
-                            SizedBox(width: 8),
-                            Text('Delete'),
+                            Icon(Icons.delete_outline,
+                                color: Colors.red, size: 18),
+                            SizedBox(width: 10),
+                            Text('Delete',
+                                style: TextStyle(color: Colors.red)),
                           ],
                         ),
                       ),
@@ -131,87 +165,83 @@ class DocumentCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Expanded(
                 child: Text(
                   document.name,
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
+                    height: 1.3,
                   ),
-                  maxLines: 2,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(height: 8),
+              Text(
+                dateFormat.format(document.createdAt),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: colorScheme.onSurface.withAlpha(130),
+                ),
+              ),
+              if (document.pageCount > 0) ...[
+                const SizedBox(height: 2),
+                Text(
+                  '${document.pageCount} ${document.pageCount == 1 ? 'page' : 'pages'}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: colorScheme.onSurface.withAlpha(130),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 6),
+              // Status badge
               Row(
                 children: [
-                  Icon(
-                    Icons.calendar_today,
-                    size: 12,
-                    color: Theme.of(context).colorScheme.onSurface.withAlpha(150),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    dateFormat.format(document.createdAt),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurface.withAlpha(150),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: document.extractedText.isNotEmpty
+                          ? Colors.green.withAlpha(25)
+                          : Colors.orange.withAlpha(25),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          document.extractedText.isNotEmpty
+                              ? Icons.check_circle
+                              : Icons.pending,
+                          size: 10,
+                          color: document.extractedText.isNotEmpty
+                              ? Colors.green
+                              : Colors.orange,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          document.extractedText.isNotEmpty
+                              ? 'Indexed'
+                              : 'Pending',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            color: document.extractedText.isNotEmpty
+                                ? Colors.green
+                                : Colors.orange,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              if (document.pageCount > 0)
-                Row(
-                  children: [
-                    Icon(
-                      Icons.description_outlined,
-                      size: 12,
-                      color: Theme.of(context).colorScheme.onSurface.withAlpha(150),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${document.pageCount} ${document.pageCount == 1 ? 'page' : 'pages'}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurface.withAlpha(150),
-                      ),
-                    ),
-                  ],
-                ),
-              if (document.extractedText.isNotEmpty)
-                Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withAlpha(20),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.check_circle, size: 12, color: Colors.green),
-                      SizedBox(width: 4),
-                      Text(
-                        'Indexed',
-                        style: TextStyle(fontSize: 10, color: Colors.green),
-                      ),
-                    ],
-                  ),
-                ),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  void _openSummarize(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => SummarizePage(documentId: document.id),
       ),
     );
   }
@@ -221,21 +251,20 @@ class DocumentCard extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Document'),
-        content: Text('Are you sure you want to delete "${document.name}"?'),
+        content:
+            Text('Delete "${document.name}"? This cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () {
               Navigator.pop(context);
               onDelete();
             },
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: Colors.red),
-            ),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
           ),
         ],
       ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get_it/get_it.dart';
 
 import '../../domain/entities/document.dart';
@@ -6,7 +7,7 @@ import '../../domain/repositories/document_repository.dart';
 
 class SummarizePage extends StatefulWidget {
   final String? documentId;
-  
+
   const SummarizePage({super.key, this.documentId});
 
   @override
@@ -14,12 +15,12 @@ class SummarizePage extends StatefulWidget {
 }
 
 class _SummarizePageState extends State<SummarizePage> {
-  final DocumentRepository _repository = GetIt.I<DocumentRepository>();
+  final _repository = GetIt.I<DocumentRepository>();
   Document? _selectedDocument;
   List<Document> _documents = [];
   String _summary = '';
   bool _isLoading = false;
-  String _summaryType = 'concise'; // 'concise', 'detailed', 'bullet_points'
+  String _summaryType = 'concise';
 
   @override
   void initState() {
@@ -29,17 +30,20 @@ class _SummarizePageState extends State<SummarizePage> {
 
   Future<void> _loadDocuments() async {
     final docs = await _repository.getAllDocuments();
-    setState(() {
-      _documents = docs;
-      if (widget.documentId != null) {
-        _selectedDocument = docs.firstWhere(
-          (d) => d.id == widget.documentId,
-          orElse: () => docs.first,
-        );
-      } else if (docs.isNotEmpty) {
-        _selectedDocument = docs.first;
-      }
-    });
+    if (mounted) {
+      setState(() {
+        _documents = docs;
+        if (widget.documentId != null) {
+          try {
+            _selectedDocument = docs.firstWhere((d) => d.id == widget.documentId);
+          } catch (_) {
+            _selectedDocument = docs.isNotEmpty ? docs.first : null;
+          }
+        } else {
+          _selectedDocument = docs.isNotEmpty ? docs.first : null;
+        }
+      });
+    }
   }
 
   Future<void> _generateSummary() async {
@@ -51,107 +55,83 @@ class _SummarizePageState extends State<SummarizePage> {
     });
 
     try {
-      // In a real implementation, we'd retrieve all document content
-      // For now, we'll create a simulated summary until LLM integration is complete
-      await Future.delayed(const Duration(seconds: 2));
+      // Placeholder summaries until LLM integration is active.
+      // When an LLM model is downloaded, this path will be replaced
+      // by RAGOrchestrator.generateAnswer() with a summarization prompt.
+      await Future.delayed(const Duration(milliseconds: 800));
 
-      final docName = _selectedDocument!.name;
-      final pageCount = _selectedDocument!.pageCount;
-      
-      String summary;
-      switch (_summaryType) {
-        case 'concise':
-          summary = '''Summary of "$docName"
+      final name = _selectedDocument!.name;
+      final pages = _selectedDocument!.pageCount;
 
-This $pageCount-page document contains key information organized into main sections. The document discusses several important topics with supporting evidence and examples.
+      final summary = switch (_summaryType) {
+        'concise' => '''Summary of "$name"
+
+This $pages-page document has been indexed for search. Key topics from the document are available for AI-powered Q&A in the Chat tab.
 
 Key Points:
-• Main topic introduced in early sections
-• Supporting arguments presented throughout
-• Conclusions and recommendations in final sections
+• Document indexed and ready for queries
+• Use Chat to ask specific questions
+• Full AI summaries require an LLM model download
 
-(Note: Full AI-powered summaries will be available once LLM models are downloaded)''';
-          break;
-        case 'detailed':
-          summary = '''Detailed Summary of "$docName"
+(Download an AI model in Settings → AI Models for full summaries)''',
+        'detailed' => '''Detailed Summary of "$name"
 
-Overview:
-This comprehensive document spans $pageCount pages and covers multiple interconnected topics. The content is structured logically, beginning with foundational concepts and progressing to advanced applications.
+Document Information:
+• Pages: $pages
+• Type: ${_selectedDocument!.type.toUpperCase()}
+• Status: Indexed and searchable
 
-Section Analysis:
-• Introduction: Sets context and outlines scope
-• Main Content: Detailed explanations with examples
-• Supporting Evidence: Data, case studies, references
-• Conclusions: Key takeaways and implications
+This document has been fully processed and chunked into semantic segments. All content is searchable via the Chat feature using natural language queries.
 
-The document is well-organized and provides thorough coverage of the subject matter. Each section builds upon previous content, creating a cohesive narrative.
+To get a real AI-generated detailed summary, download a language model from Settings → AI Models, then return here.''',
+        'bullet_points' => '''Key Points from "$name":
 
-(Note: Full AI-powered summaries require downloaded LLM models)''';
-          break;
-        case 'bullet_points':
-          summary = '''Key Points from "$docName":
+• $pages ${pages == 1 ? 'page' : 'pages'} of content, fully indexed
+• All text extracted and embedded for semantic search
+• Queryable from the Chat screen using natural language
+• Supports cross-document search when multiple docs are loaded
 
-• Document covers ${pageCount > 1 ? '$pageCount pages' : '1 page'} of content
-• Organized into logical sections
-• Contains multiple supporting arguments
-• Includes practical examples and applications
-• Presents clear conclusions
-• Provides actionable recommendations
+To extract AI-powered bullet points, download an LLM from Settings → AI Models.''',
+        _ => 'Select a summary type above.',
+      };
 
-• Suitable for quick reference and review
-• Can be queried for specific information
-• Fully searchable within Smriti
-
-(Note: AI-powered bullet extraction requires LLM models)''';
-          break;
-        default:
-          summary = 'Summary generation not available.';
+      if (mounted) {
+        setState(() {
+          _summary = summary;
+          _isLoading = false;
+        });
       }
-
-      setState(() {
-        _summary = summary;
-        _isLoading = false;
-      });
     } catch (e) {
-      setState(() {
-        _summary = 'Error generating summary: $e';
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _summary = 'Error: $e';
+          _isLoading = false;
+        });
+      }
     }
   }
 
-  void _copyToClipboard() {
-    // In production, use flutter/services.dart Clipboard
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Summary copied to clipboard')),
-    );
-  }
-
-  void _shareSummary() {
-    // In production, use share_plus package
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Share functionality coming soon')),
-    );
+  Future<void> _copyToClipboard() async {
+    await Clipboard.setData(ClipboardData(text: _summary));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Summary copied to clipboard')),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Summarize Document'),
+        title: const Text('Summarize'),
         centerTitle: true,
         actions: [
           if (_summary.isNotEmpty)
             IconButton(
-              icon: const Icon(Icons.copy),
+              icon: const Icon(Icons.copy_outlined),
               onPressed: _copyToClipboard,
-              tooltip: 'Copy',
-            ),
-          if (_summary.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.share),
-              onPressed: _shareSummary,
-              tooltip: 'Share',
+              tooltip: 'Copy to clipboard',
             ),
         ],
       ),
@@ -161,36 +141,27 @@ The document is well-organized and provides thorough coverage of the subject mat
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Document selector
-            if (_documents.length > 1)
+            if (_documents.length > 1) ...[
               DropdownButtonFormField<Document>(
                 value: _selectedDocument,
                 decoration: const InputDecoration(
-                  labelText: 'Select Document',
+                  labelText: 'Document',
                   border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
-                items: _documents.map((doc) {
-                  return DropdownMenuItem(
-                    value: doc,
-                    child: Text(doc.name, overflow: TextOverflow.ellipsis),
-                  );
-                }).toList(),
-                onChanged: (doc) {
-                  setState(() {
-                    _selectedDocument = doc;
-                    _summary = '';
-                  });
-                },
+                items: _documents.map((doc) => DropdownMenuItem(
+                  value: doc,
+                  child: Text(doc.name, overflow: TextOverflow.ellipsis),
+                )).toList(),
+                onChanged: (doc) => setState(() {
+                  _selectedDocument = doc;
+                  _summary = '';
+                }),
               ),
-            
-            if (_documents.length > 1)
               const SizedBox(height: 16),
-            
+            ],
+
             // Summary type selector
-            const Text(
-              'Summary Type',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
             SegmentedButton<String>(
               segments: const [
                 ButtonSegment(
@@ -210,19 +181,18 @@ The document is well-organized and provides thorough coverage of the subject mat
                 ),
               ],
               selected: {_summaryType},
-              onSelectionChanged: (selected) {
-                setState(() {
-                  _summaryType = selected.first;
-                  _summary = '';
-                });
-              },
+              onSelectionChanged: (selected) => setState(() {
+                _summaryType = selected.first;
+                _summary = '';
+              }),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Generate button
             SizedBox(
               width: double.infinity,
+              height: 48,
               child: FilledButton.icon(
                 onPressed: _selectedDocument == null || _isLoading
                     ? null
@@ -237,9 +207,9 @@ The document is well-organized and provides thorough coverage of the subject mat
                 label: Text(_isLoading ? 'Generating...' : 'Generate Summary'),
               ),
             ),
-            
-            const SizedBox(height: 24),
-            
+
+            const SizedBox(height: 20),
+
             // Summary output
             if (_summary.isNotEmpty)
               Expanded(
@@ -252,35 +222,33 @@ The document is well-organized and provides thorough coverage of the subject mat
                         Row(
                           children: [
                             Icon(
-                              Icons.summarize,
+                              Icons.auto_awesome,
+                              size: 18,
                               color: Theme.of(context).colorScheme.primary,
                             ),
                             const SizedBox(width: 8),
                             Text(
                               'Summary',
-                              style: Theme.of(context).textTheme.titleMedium,
+                              style: Theme.of(context).textTheme.titleSmall,
                             ),
                           ],
                         ),
                         const Divider(),
                         Text(
                           _summary,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            height: 1.6,
-                          ),
+                          style: const TextStyle(fontSize: 14, height: 1.65),
                         ),
                       ],
                     ),
                   ),
                 ),
               ),
-            
+
             if (_documents.isEmpty)
               const Expanded(
                 child: Center(
                   child: Text(
-                    'Add documents first to generate summaries',
+                    'Add documents from the home screen\nto generate summaries.',
                     textAlign: TextAlign.center,
                   ),
                 ),

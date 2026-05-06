@@ -2,139 +2,129 @@
 
 **Your second memory, on your phone.**
 
-Smriti is a mobile application that turns any collection of personal documents — PDFs, lecture notes, images, audio recordings, textbooks — into a queryable, conversational knowledge base. Everything runs on-device. No internet required after setup. No data ever leaves the phone.
+Smriti is an offline-first AI notebook for Android. Import PDFs, images, and audio — then ask questions and get grounded answers backed by citations from your own documents. Everything runs on-device. No data ever leaves your phone.
+
+---
 
 ## Features
 
-- **Privacy by Design**: All processing happens locally. Your sensitive documents never touch a server.
-- **Works Offline**: No internet required. Perfect for classrooms, remote areas, flights, and distraction-free study.
-- **Multi-format Support**: PDF, TXT, DOCX, images (OCR), audio (transcription)
-- **Conversational RAG**: Ask natural-language questions, get grounded answers with citations
-- **Fast Retrieval**: Vector-based semantic search finds relevant content in milliseconds
+| Feature | Detail |
+|---------|--------|
+| **100% Offline** | All AI inference and processing happens on-device |
+| **PDF & Text** | Full text extraction from multi-page PDFs |
+| **Image OCR** | Extract text from photos using ML Kit (camera or gallery) |
+| **Audio Import** | Index audio files for search (transcription via Whisper model) |
+| **Conversational AI** | Ask natural language questions, get cited answers |
+| **Semantic Search** | Vector-based search finds relevant content instantly |
+| **App Lock** | Biometric / PIN protection enforced on every launch |
+| **Dark Mode** | Follows system theme |
+
+---
 
 ## Tech Stack
 
-- **Framework**: Flutter (cross-platform)
-- **LLM Runtime**: llama.cpp (via FFI bindings)
-- **LLM Models**:
-  - Gemma 2B Q4 (~1.3GB) - default
-  - Llama 3.2 1B Q4 (~700MB) - fallback for low-RAM devices
-- **Embedding**: all-MiniLM-L6-v2 quantized (~25MB)
-- **Vector Database**: ObjectBox with built-in vector search
-- **Document Parsing**:
-  - PDF: syncfusion_flutter_pdf
-  - OCR: Google ML Kit Text Recognition (5 scripts)
-  - Audio: whisper.cpp (multilingual transcription)
-  - Camera: image_picker
-  - Image Processing: image (Dart)
+- **Framework:** Flutter (Dart 3.3+)
+- **Database:** ObjectBox (vector store for embeddings)
+- **LLM Runtime:** llama.cpp (GGUF models via FFI)
+- **OCR:** Google ML Kit Text Recognition (offline)
+- **Embedding:** all-MiniLM-L6-v2 via TFLite
+- **PDF Parsing:** Syncfusion Flutter PDF
+- **Security:** flutter_secure_storage, local_auth
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Flutter SDK 3.19+
+- Android Studio with Android SDK
+- Android device / emulator (API 21+)
+
+### Build & Run
+
+```bash
+# Install dependencies
+flutter pub get
+
+# Run in debug mode
+flutter run
+
+# Production APK
+flutter build apk --release
+
+# Play Store bundle
+flutter build appbundle --release
+
+# Code quality check
+flutter analyze
+```
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for complete Play Store submission instructions.
+
+---
 
 ## Project Structure
 
 ```
 lib/
 ├── core/
-│   ├── constants/
-│   ├── di/
-│   ├── services/         # LLM, Embeddings, Security
-│   └── theme/
+│   ├── animations/       # AnimatedLogo, FadeAnimation, SlideAnimation
+│   ├── constants/        # AppConstants (version, file types, keys)
+│   ├── di/               # GetIt dependency injection
+│   ├── services/         # LLM, Embedding, OCR, Audio, Security, Models
+│   └── theme/            # Light + dark MaterialTheme
 ├── data/
-│   ├── datasources/
-│   ├── models/           # ObjectBox entities
+│   ├── datasources/      # SharedPreferences + file I/O layer
+│   ├── models/           # ObjectBox entity models (Document, Chunk)
 │   ├── objectbox_store.dart
-│   └── repositories/
+│   └── repositories/     # DocumentRepository implementation
 ├── domain/
-│   ├── entities/
-│   ├── repositories/
-│   └── services/         # RAG Orchestrator
+│   ├── entities/         # Pure Dart domain models
+│   ├── repositories/     # Abstract repository interfaces
+│   └── services/         # RAGOrchestrator (retrieve → generate)
 └── presentation/
-    ├── bloc/
-    ├── pages/            # Home, Chat, Summarize, Settings, Model Download
-    └── widgets/
+    ├── bloc/             # DocumentBloc (events + states)
+    ├── pages/            # All app screens
+    └── widgets/          # Reusable UI components
 ```
 
-## Getting Started
-
-### Prerequisites
-
-- Flutter SDK (latest stable)
-- Android Studio / Xcode
-- Android SDK for Android builds
-- 8GB+ RAM development machine
-
-### Installation
-
-1. Clone the repository:
-
-```bash
-git clone https://github.com/your-org/smriti.git
-cd smriti
-```
-
-2. Install dependencies:
-
-```bash
-flutter pub get
-```
-
-3. Run the app:
-
-```bash
-flutter run
-```
-
-### Building for Production
-
-**Android:**
-
-```bash
-# Debug
-flutter run
-
-# Release APK (split by architecture)
-flutter build apk --release --split-per-abi
-
-# Play Store bundle
-flutter build appbundle --release
-
-# Analyze
-flutter analyze
-```
-
-## Current Status
-
-**Build**: ✅ **PRODUCTION READY**  
-**Status**: Modern UI, fully optimized, deployment ready.  
-**Analysis**: 0 errors, 0 warnings ✅
-
-## Performance Targets
-
-| Operation                      | Target          |
-| ------------------------------ | --------------- |
-| First PDF embedding (50 pages) | ~30 seconds     |
-| RAG retrieval                  | < 1 second      |
-| LLM token generation           | 5-10 tokens/sec |
-| End-to-end answer              | 10-30 seconds   |
-| Cold start                     | 3-5 seconds     |
+---
 
 ## Privacy & Security
 
-- All AI inference runs on-device
-- Documents stored in app-private storage
-- No network calls for AI operations
-- No analytics or telemetry
-- Optional: document encryption at rest
+- All AI inference and document processing runs fully on-device
+- No analytics, telemetry, or cloud sync
+- Documents stored in app-private scoped storage
+- Encryption: AES-GCM via Android EncryptedSharedPreferences
+- Biometric lock using Android Biometric API
+- Network: HTTPS-only, used only for optional model downloads
+- `allowBackup=false` prevents ADB backup of sensitive data
 
-## Contributing
+---
 
-We welcome contributions from the community. Please submit a pull request or open an issue to discuss proposed changes.
+## AI Models (Optional Downloads)
+
+| Model | Use | Size |
+|-------|-----|------|
+| Gemma 2B Q4 | AI chat answers | ~1.3 GB |
+| Llama 3.2 1B Q4 | Chat (low-RAM) | ~700 MB |
+| Phi-3 Mini Q4 | Advanced reasoning | ~1.9 GB |
+| all-MiniLM-L6-v2 | Semantic search | ~25 MB |
+| Whisper Tiny | Audio transcription | ~75 MB |
+
+Download from inside the app: **Settings → AI Models**
+
+---
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details.
+MIT License — free for personal and commercial use.
 
 ## Acknowledgments
 
-- [llama.cpp](https://github.com/ggerganov/llama.cpp) for on-device LLM inference
-- [Google Gemma](https://ai.google.dev/gemma) for the base language model
-- [ObjectBox](https://objectbox.io/) for high-performance vector storage
-- [Syncfusion](https://www.syncfusion.com/) for PDF processing
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) — on-device LLM inference
+- [ObjectBox](https://objectbox.io/) — high-performance vector database
+- [Google ML Kit](https://developers.google.com/ml-kit) — offline OCR
+- [Syncfusion](https://www.syncfusion.com/) — PDF processing
+- [Hugging Face](https://huggingface.co/) — model hosting

@@ -22,60 +22,93 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    _checkPermissions();
+    WidgetsBinding.instance.addObserver(this);
     context.read<DocumentBloc>().add(const LoadDocuments());
   }
 
-  Future<void> _checkPermissions() async {
-    if (Platform.isAndroid) {
-      await Permission.storage.request();
-      await Permission.manageExternalStorage.request();
-    }
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _pickDocument() async {
-    // Show options for document types
     final source = await showModalBottomSheet<String>(
       context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.folder),
-              title: const Text('Files'),
-              subtitle: const Text('PDF, TXT, Images, Audio'),
-              onTap: () => Navigator.pop(context, 'files'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Camera'),
-              subtitle: const Text('Take a photo to OCR'),
-              onTap: () => Navigator.pop(context, 'camera'),
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Add Document',
+                    style: TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withAlpha(30),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.folder_open, color: Colors.blue),
+                ),
+                title: const Text('Choose File'),
+                subtitle: const Text('PDF, TXT, Images, Audio'),
+                onTap: () => Navigator.pop(context, 'files'),
+              ),
+              ListTile(
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.green.withAlpha(30),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.camera_alt, color: Colors.green),
+                ),
+                title: const Text('Take Photo'),
+                subtitle: const Text('Capture and extract text via OCR'),
+                onTap: () => Navigator.pop(context, 'camera'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
 
-    if (source == 'files') {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: AppConstants.supportedExtensions,
-        allowMultiple: false,
-      );
+    if (source == null) return;
 
-      if (result != null && result.files.single.path != null) {
-        final file = File(result.files.single.path!);
-        if (context.mounted) {
-          context.read<DocumentBloc>().add(AddDocument(file));
-        }
-      }
+    if (source == 'files') {
+      await _pickFile();
     } else if (source == 'camera') {
+      if (!mounted) return;
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const ImageCapturePage()),
@@ -83,53 +116,104 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _pickFile() async {
+    // Android 12 and below need explicit READ_EXTERNAL_STORAGE permission
+    if (Platform.isAndroid) {
+      final status = await Permission.storage.status;
+      if (!status.isGranted) {
+        final result = await Permission.storage.request();
+        if (!result.isGranted && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Storage permission is required to pick files.'),
+              action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
+            ),
+          );
+          return;
+        }
+      }
+    }
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: AppConstants.supportedExtensions,
+        allowMultiple: false,
+        withData: false,
+        withReadStream: false,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+      final path = result.files.single.path;
+      if (path == null) return;
+
+      if (mounted) {
+        context.read<DocumentBloc>().add(AddDocument(File(path)));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open file picker: ${e.toString().split('\n').first}'),
+            action: const SnackBarAction(label: 'Settings', onPressed: openAppSettings),
+          ),
+        );
+      }
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Column(
+        title: Column(
           children: [
-            Text(
-              AppConstants.appName,
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+          const Text(
+            AppConstants.appName,
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
             Text(
               AppConstants.appTagline,
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.normal,
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withAlpha(150),
+              ),
             ),
           ],
         ),
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.summarize),
+            icon: const Icon(Icons.auto_awesome),
             tooltip: 'Summarize',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SummarizePage()),
-              );
-            },
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SummarizePage()),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.chat_bubble_outline),
-            tooltip: 'Chat',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ChatPage()),
-              );
-            },
+            tooltip: 'AI Chat',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ChatPage()),
+            ),
           ),
           IconButton(
-            icon: const Icon(Icons.settings),
+            icon: const Icon(Icons.settings_outlined),
             tooltip: 'Settings',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SettingsPage()),
-              );
-            },
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SettingsPage()),
+            ).then((_) {
+              // Reload documents in case data was cleared
+              context.read<DocumentBloc>().add(const LoadDocuments());
+            }),
           ),
         ],
       ),
@@ -137,7 +221,18 @@ class _HomePageState extends State<HomePage> {
         listener: (context, state) {
           if (state is DocumentError) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(state.message)),
+              SnackBar(
+                content: Text(state.message),
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+            );
+          } else if (state is DocumentProcessed) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('✓ "${state.document.name}" processed and indexed'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 3),
+              ),
             );
           }
         },
@@ -147,45 +242,56 @@ class _HomePageState extends State<HomePage> {
           }
 
           if (state is DocumentProcessing) {
-            return LoadingIndicator(message: state.message);
+            return LoadingIndicator(
+              message: state.message,
+              documentName: state.document.name,
+            );
           }
 
-          if (state is DocumentsLoaded) {
-            if (state.documents.isEmpty) {
-              return EmptyState(
-                onAddDocument: _pickDocument,
-              );
-            }
+          final docs = state is DocumentsLoaded ? state.documents : <dynamic>[];
 
-            return Padding(
+          if (docs.isEmpty) {
+            return EmptyState(onAddDocument: _pickDocument);
+          }
+
+          return RefreshIndicator(
+            onRefresh: () async {
+              context.read<DocumentBloc>().add(const LoadDocuments());
+            },
+            child: Padding(
               padding: const EdgeInsets.all(16),
               child: GridView.builder(
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
-                  childAspectRatio: 0.75,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
+                  childAspectRatio: 0.78,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
                 ),
-                itemCount: state.documents.length,
+                itemCount: docs.length,
                 itemBuilder: (context, index) {
-                  final doc = state.documents[index];
+                  final doc = docs[index];
                   return DocumentCard(
                     document: doc,
                     onDelete: () {
-                      context.read<DocumentBloc>().add(
-                        DeleteDocument(doc.id),
-                      );
+                      context
+                          .read<DocumentBloc>()
+                          .add(DeleteDocument(doc.id));
                     },
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatPage(initialDocumentId: doc.id),
+                      ),
+                    ),
                   );
                 },
               ),
-            );
-          }
-
-          return EmptyState(onAddDocument: _pickDocument);
+            ),
+          );
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'add_doc_fab',
         onPressed: _pickDocument,
         icon: const Icon(Icons.add),
         label: const Text('Add Document'),
