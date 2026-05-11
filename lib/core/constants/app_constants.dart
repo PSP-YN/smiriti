@@ -14,17 +14,26 @@ class AppConstants {
     'pdf', 'txt',
     // Images (OCR)
     'png', 'jpg', 'jpeg', 'webp', 'bmp',
-    // Audio (transcription)
-    'mp3', 'wav', 'm4a', 'aac', 'ogg',
+    // Audio (transcription / STT)
+    'mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac',
+    // Video (frame extraction + audio STT)
+    'mp4', 'mov', 'avi', 'mkv',
   ];
 
   static const List<String> documentExtensions = ['pdf', 'txt'];
   static const List<String> imageExtensions = ['png', 'jpg', 'jpeg', 'webp', 'bmp'];
-  static const List<String> audioExtensions = ['mp3', 'wav', 'm4a', 'aac', 'ogg'];
+  static const List<String> audioExtensions = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac'];
+  static const List<String> videoExtensions = ['mp4', 'mov', 'avi', 'mkv'];
 
-  // ── Chunking ──────────────────────────────────────────────────────────────
-  static const int chunkSize = 500; // characters (~125 tokens)
-  static const int chunkOverlap = 50; // character overlap between chunks
+  // ── RAG / Chunking ────────────────────────────────────────────────────────
+  static const int chunkSizeWords = 350;   // ~125 tokens
+  static const int chunkOverlapWords = 50; // word overlap between chunks
+  static const int maxRetrievedChunks = 8; // top-k chunks for RAG context
+
+  // ── LLM inference defaults ────────────────────────────────────────────────
+  static const int llmMaxTokens = 1024;
+  static const double llmTemperature = 0.3;  // lower → more accurate / factual
+  static const double llmTopP = 0.9;
 
   // ── Model identifiers ─────────────────────────────────────────────────────
   static const String defaultModelId = 'gemma-2b-q4';

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/constants/app_constants.dart';
@@ -28,7 +29,7 @@ class _SettingsPageState extends State<SettingsPage> {
   String _llmModelName = 'None';
   String _llmModelStatus = 'Not downloaded';
   String _llmModelSize = '';
-  String _storageUsed = 'Calculating...';
+  String _storageUsed = '—';
   bool _loadingSettings = true;
 
   @override
@@ -38,18 +39,31 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _loadSettings() async {
-    setState(() => _loadingSettings = true);
+    if (mounted) setState(() => _loadingSettings = true);
     try {
-      final biometricEnabled = await SecureStorageService.isBiometricEnabled();
-      final appLockEnabled = await SecureStorageService.isAppLockEnabled();
-      final canBiometric = await SecureStorageService.canAuthenticateWithBiometrics();
+      final results = await Future.wait([
+        SecureStorageService.isBiometricEnabled(),
+        SecureStorageService.isAppLockEnabled(),
+        SecureStorageService.canAuthenticateWithBiometrics(),
+        ModelManager.getActiveModel(),
+        ModelManager.getStorageInfo(),
+        _getDocumentDirSizeMB(),
+      ]);
+
+      final biometricEnabled = results[0] as bool;
+      final appLockEnabled = results[1] as bool;
+      final canBiometric = results[2] as bool;
+      final activeModel = results[3] as ModelInfo?;
+      final storageInfo = results[4] as Map<String, dynamic>;
+      final docSizeMB = results[5] as int;
+
+      final llmDownloaded = activeModel != null &&
+          await ModelManager.isModelDownloaded(activeModel.id);
       final embeddingReady = EmbeddingService.isInitialized;
-      final activeModel = await ModelManager.getActiveModel();
-      final llmDownloaded = activeModel != null
-          ? await ModelManager.isModelDownloaded(activeModel.id)
-          : false;
-      final storageInfo = await ModelManager.getStorageInfo();
-      final docSize = await _getDocumentDirSize();
+
+      final modelsMB = int.tryParse(
+              (storageInfo['totalSizeMB'] as String?)?.split('.').first ?? '0') ??
+          0;
 
       if (mounted) {
         setState(() {
@@ -57,14 +71,13 @@ class _SettingsPageState extends State<SettingsPage> {
           _appLockEnabled = appLockEnabled;
           _canUseBiometrics = canBiometric;
           _embeddingModelReady = embeddingReady;
-          _embeddingStatus = embeddingReady ? 'Ready' : 'Not downloaded';
+          _embeddingStatus = embeddingReady ? '✓ Ready' : 'Not downloaded';
           _llmModelName = activeModel?.name ?? 'None selected';
-          _llmModelStatus = llmDownloaded ? 'Ready' : 'Not downloaded';
-          _llmModelSize = activeModel != null ? '${activeModel.sizeMB} MB' : '';
-          final modelsMB = storageInfo['totalSizeMB'] as int? ?? 0;
-          final docMB = docSize;
-          _storageUsed = '${modelsMB + docMB} MB total'
-              ' ($modelsMB MB models, $docMB MB documents)';
+          _llmModelStatus = llmDownloaded ? '✓ Ready' : 'Not downloaded';
+          _llmModelSize =
+              activeModel != null ? '${activeModel.sizeMB} MB' : '';
+          _storageUsed =
+              '${modelsMB + docSizeMB} MB ($modelsMB MB models · $docSizeMB MB docs)';
           _loadingSettings = false;
         });
       }
@@ -73,16 +86,14 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Future<int> _getDocumentDirSize() async {
+  Future<int> _getDocumentDirSizeMB() async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
-      final docsDir = Directory('${appDir.path}/documents');
-      if (!await docsDir.exists()) return 0;
+      final dir = Directory('${appDir.path}/documents');
+      if (!await dir.exists()) return 0;
       int total = 0;
-      await for (final entity in docsDir.list(recursive: true)) {
-        if (entity is File) {
-          total += await entity.length();
-        }
+      await for (final e in dir.list(recursive: true)) {
+        if (e is File) total += await e.length();
       }
       return (total / 1024 / 1024).ceil();
     } catch (_) {
@@ -90,18 +101,19 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  // ── Biometric / lock toggles ──────────────────────────────────────────────
+
   Future<void> _toggleBiometric(bool value) async {
     if (value && !_canUseBiometrics) {
-      _showSnack('Biometric authentication not available on this device');
+      _snack('Biometric authentication is not available on this device.');
       return;
     }
     if (value) {
-      // Verify biometric before enabling
       final ok = await SecureStorageService.authenticateWithBiometrics(
         reason: 'Confirm your identity to enable biometric lock',
       );
       if (!ok) {
-        _showSnack('Authentication failed — biometric lock not enabled');
+        _snack('Authentication failed — biometric lock not enabled.');
         return;
       }
     }
@@ -111,12 +123,11 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _toggleAppLock(bool value) async {
     if (value && _canUseBiometrics) {
-      // Verify identity before enabling lock
       final ok = await SecureStorageService.authenticateWithBiometrics(
         reason: 'Confirm your identity to enable app lock',
       );
       if (!ok) {
-        _showSnack('Authentication failed — app lock not enabled');
+        _snack('Authentication failed — app lock not enabled.');
         return;
       }
     }
@@ -124,21 +135,23 @@ class _SettingsPageState extends State<SettingsPage> {
     if (mounted) setState(() => _appLockEnabled = value);
   }
 
+  // ── Clear data ────────────────────────────────────────────────────────────
+
   Future<void> _clearAllData() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Clear All Data'),
         content: const Text(
           'This will permanently delete all documents, embeddings, AI models, and settings.\n\nThis cannot be undone.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Delete Everything'),
           ),
@@ -148,6 +161,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     if (confirmed != true || !mounted) return;
 
+    if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -156,69 +170,70 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             CircularProgressIndicator(),
             SizedBox(width: 16),
-            Text('Clearing all data...'),
+            Text('Clearing…'),
           ],
         ),
       ),
     );
 
     try {
-      // 1. Clear secure storage
       await SecureStorageService.clearAllSecureData();
-
-      // 2. Clear ObjectBox (documents + chunks)
       await ObjectBoxStore.clearAll();
 
-      // 3. Delete document files from disk
       final appDir = await getApplicationDocumentsDirectory();
-      final docsDir = Directory('${appDir.path}/documents');
-      if (await docsDir.exists()) await docsDir.delete(recursive: true);
-
-      // 4. Delete downloaded AI models
-      final modelsDir = Directory('${appDir.path}/models');
-      if (await modelsDir.exists()) await modelsDir.delete(recursive: true);
+      for (final sub in ['documents', 'models']) {
+        final dir = Directory('${appDir.path}/$sub');
+        if (await dir.exists()) await dir.delete(recursive: true);
+      }
 
       if (mounted) {
         Navigator.pop(context); // close loading dialog
-        _showSnack('All data cleared successfully');
+        _snack('All data cleared.');
         await _loadSettings();
       }
     } catch (e) {
       if (mounted) {
         Navigator.pop(context);
-        _showSnack('Error clearing data: $e');
+        _snack('Error: $e');
       }
     }
   }
 
-  void _showSnack(String message) {
+  // ── UI helpers ────────────────────────────────────────────────────────────
+
+  void _snack(String msg) {
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(msg)));
     }
   }
 
+  void _openModelPage() => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ModelDownloadPage()),
+      ).then((_) => _loadSettings());
+
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('Settings'), centerTitle: true),
       body: _loadingSettings
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _loadSettings,
               child: ListView(
                 children: [
-                  // ── Security & Privacy ──────────────────────────────────
+                  // ── Security & Privacy ───────────────────────────────────
                   _sectionHeader('Security & Privacy'),
 
                   SwitchListTile(
-                    secondary: const Icon(Icons.lock),
+                    secondary: const Icon(Icons.lock_rounded),
                     title: const Text('App Lock'),
-                    subtitle: const Text('Require authentication on app launch'),
+                    subtitle: const Text('Require authentication on launch'),
                     value: _appLockEnabled,
                     onChanged: _toggleAppLock,
                   ),
@@ -228,7 +243,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     title: const Text('Biometric Authentication'),
                     subtitle: Text(
                       _canUseBiometrics
-                          ? 'Use fingerprint or face to unlock'
+                          ? 'Fingerprint or face unlock'
                           : 'Not available on this device',
                     ),
                     value: _biometricEnabled,
@@ -240,50 +255,44 @@ class _SettingsPageState extends State<SettingsPage> {
                   if (!_appLockEnabled)
                     Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 4),
+                          horizontal: 72, vertical: 2),
                       child: Text(
                         'Enable App Lock first to configure biometrics.',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withAlpha(120),
+                          color: colorScheme.onSurface.withAlpha(120),
                         ),
                       ),
                     ),
 
-                  // ── AI Models ───────────────────────────────────────────
+                  // ── AI Models ─────────────────────────────────────────────
                   _sectionHeader('AI Models'),
 
                   ListTile(
-                    leading: const Icon(Icons.model_training),
+                    leading: Icon(
+                      Icons.hub_rounded,
+                      color: _embeddingModelReady
+                          ? Colors.green
+                          : colorScheme.onSurface.withAlpha(160),
+                    ),
                     title: const Text('Embedding Model'),
-                    subtitle: Text(
-                        'all-MiniLM-L6-v2 — $_embeddingStatus'),
+                    subtitle: Text('all-MiniLM-L6-v2 · $_embeddingStatus'),
                     trailing: _embeddingModelReady
-                        ? const Icon(Icons.check_circle,
-                            color: Colors.green)
+                        ? const Icon(Icons.check_circle, color: Colors.green)
                         : const Icon(Icons.download_outlined),
-                    onTap: _embeddingModelReady
-                        ? null
-                        : () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) =>
-                                      const ModelDownloadPage()),
-                            ).then((_) => _loadSettings());
-                          },
+                    onTap: _embeddingModelReady ? null : _openModelPage,
                   ),
 
                   ListTile(
-                    leading: const Icon(Icons.memory),
-                    title: const Text('LLM Model'),
+                    leading: Icon(
+                      Icons.memory_rounded,
+                      color: _llmModelStatus.startsWith('✓')
+                          ? Colors.green
+                          : colorScheme.onSurface.withAlpha(160),
+                    ),
+                    title: Text(_llmModelName),
                     subtitle: Text(
-                      '$_llmModelName'
-                      '${_llmModelSize.isNotEmpty ? " \u2022 $_llmModelSize" : ""}'
-                      ' \u2022 $_llmModelStatus',
+                      '${_llmModelSize.isNotEmpty ? '$_llmModelSize · ' : ''}$_llmModelStatus',
                     ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -294,68 +303,84 @@ class _SettingsPageState extends State<SettingsPage> {
                         const Icon(Icons.chevron_right),
                       ],
                     ),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const ModelDownloadPage()),
-                      ).then((_) => _loadSettings());
-                    },
+                    onTap: _openModelPage,
                   ),
 
-                  // ── Storage ─────────────────────────────────────────────
+                  // ── Storage ───────────────────────────────────────────────
                   _sectionHeader('Storage'),
 
                   ListTile(
-                    leading: const Icon(Icons.storage),
+                    leading: const Icon(Icons.storage_rounded),
                     title: const Text('Storage Used'),
                     subtitle: Text(_storageUsed),
-                    trailing: TextButton(
+                    trailing: IconButton(
+                      icon: const Icon(Icons.refresh_rounded),
+                      tooltip: 'Refresh',
                       onPressed: _loadSettings,
-                      child: const Text('Refresh'),
                     ),
                   ),
 
                   ListTile(
-                    leading: const Icon(Icons.delete_forever,
+                    leading: const Icon(Icons.delete_forever_rounded,
                         color: Colors.red),
-                    title: const Text(
-                      'Clear All Data',
-                      style: TextStyle(color: Colors.red),
-                    ),
-                    subtitle: const Text('Permanently delete all documents and models'),
+                    title: const Text('Clear All Data',
+                        style: TextStyle(color: Colors.red)),
+                    subtitle: const Text(
+                        'Permanently delete all documents and models'),
                     onTap: _clearAllData,
                   ),
 
-                  // ── About ───────────────────────────────────────────────
+                  // ── About ─────────────────────────────────────────────────
                   _sectionHeader('About'),
 
-                  const ListTile(
-                    leading: Icon(Icons.info_outline),
-                    title: Text('Version'),
-                    subtitle: Text('${AppConstants.appVersion} (Build ${AppConstants.buildNumber})'),
+                  ListTile(
+                    leading: const Icon(Icons.info_outline_rounded),
+                    title: const Text('Version'),
+                    subtitle: const Text(
+                        '${AppConstants.appVersion} (Build ${AppConstants.buildNumber})'),
+                    trailing: TextButton(
+                      onPressed: () {
+                        showAboutDialog(
+                          context: context,
+                          applicationName: AppConstants.appName,
+                          applicationVersion: AppConstants.appVersion,
+                          applicationLegalese: '© 2025 Smriti. All rights reserved.',
+                        );
+                      },
+                      child: const Text('About'),
+                    ),
                   ),
 
                   const ListTile(
-                    leading: Icon(Icons.lock_outline),
+                    leading: Icon(Icons.shield_outlined),
                     title: Text('Privacy First'),
-                    subtitle: Text('100% offline — your data never leaves your device'),
+                    subtitle: Text(
+                        '100% offline · Your data never leaves your device'),
                   ),
 
                   ListTile(
                     leading: const Icon(Icons.privacy_tip_outlined),
                     title: const Text('Privacy Policy'),
                     trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const PrivacyPolicyPage()),
+                    ),
+                  ),
+
+                  ListTile(
+                    leading: const Icon(Icons.copy_outlined),
+                    title: const Text('Copy App Version'),
                     onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const PrivacyPolicyPage()),
-                      );
+                      Clipboard.setData(const ClipboardData(
+                          text:
+                              '${AppConstants.appName} v${AppConstants.appVersion}'));
+                      _snack('Copied to clipboard');
                     },
                   ),
 
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 40),
                 ],
               ),
             ),
@@ -364,13 +389,13 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Widget _sectionHeader(String title) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 6),
       child: Text(
-        title,
+        title.toUpperCase(),
         style: TextStyle(
-          fontSize: 13,
+          fontSize: 11,
           fontWeight: FontWeight.bold,
-          letterSpacing: 0.5,
+          letterSpacing: 1.2,
           color: Theme.of(context).colorScheme.primary,
         ),
       ),

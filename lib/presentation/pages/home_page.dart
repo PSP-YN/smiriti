@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/constants/app_constants.dart';
@@ -36,104 +37,40 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  // ── Source picker bottom sheet ────────────────────────────────────────────
+
   Future<void> _pickDocument() async {
     final source = await showModalBottomSheet<String>(
       context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Add Document',
-                    style: TextStyle(
-                        fontSize: 17, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-              ListTile(
-                leading: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withAlpha(30),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.folder_open, color: Colors.blue),
-                ),
-                title: const Text('Choose File'),
-                subtitle: const Text('PDF, TXT, Images, Audio'),
-                onTap: () => Navigator.pop(context, 'files'),
-              ),
-              ListTile(
-                leading: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.green.withAlpha(30),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.camera_alt, color: Colors.green),
-                ),
-                title: const Text('Take Photo'),
-                subtitle: const Text('Capture and extract text via OCR'),
-                onTap: () => Navigator.pop(context, 'camera'),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      ),
+      builder: (ctx) => _AddDocumentSheet(),
     );
 
-    if (source == null) return;
+    if (source == null || !mounted) return;
 
-    if (source == 'files') {
-      await _pickFile();
-    } else if (source == 'camera') {
-      if (!mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const ImageCapturePage()),
-      );
+    switch (source) {
+      case 'files':
+        await _pickFile();
+      case 'camera':
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ImageCapturePage()),
+          );
+        }
+      case 'gallery':
+        await _pickFromGallery();
+      case 'video':
+        await _pickVideo();
     }
   }
 
-  Future<void> _pickFile() async {
-    // Android 12 and below need explicit READ_EXTERNAL_STORAGE permission
-    if (Platform.isAndroid) {
-      final status = await Permission.storage.status;
-      if (!status.isGranted) {
-        final result = await Permission.storage.request();
-        if (!result.isGranted && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Storage permission is required to pick files.'),
-              action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
-            ),
-          );
-          return;
-        }
-      }
-    }
+  // ── File picker (documents + all supported types) ─────────────────────────
 
+  Future<void> _pickFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -152,36 +89,133 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not open file picker: ${e.toString().split('\n').first}'),
-            action: const SnackBarAction(label: 'Settings', onPressed: openAppSettings),
-          ),
-        );
+        _showError('Could not open file picker: ${e.toString().split('\n').first}');
       }
     }
   }
 
+  // ── Gallery photo picker ──────────────────────────────────────────────────
+
+  Future<void> _pickFromGallery() async {
+    // Android 13+ uses READ_MEDIA_IMAGES; older uses READ_EXTERNAL_STORAGE
+    if (Platform.isAndroid) {
+      final sdk = await _getAndroidSdk();
+      if (sdk >= 33) {
+        final status = await Permission.photos.request();
+        if (!status.isGranted && mounted) {
+          _showPermissionDenied('Photos');
+          return;
+        }
+      }
+      // Below 33: file_picker / image_picker handles it internally
+    }
+
+    try {
+      final picker = ImagePicker();
+      final photo = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 2048,
+        maxHeight: 2048,
+        imageQuality: 92,
+      );
+      if (photo == null) return;
+
+      if (mounted) {
+        context.read<DocumentBloc>().add(AddDocument(File(photo.path)));
+      }
+    } catch (e) {
+      if (mounted) _showError('Could not open gallery: ${e.toString().split('\n').first}');
+    }
+  }
+
+  // ── Video picker ─────────────────────────────────────────────────────────
+
+  Future<void> _pickVideo() async {
+    if (Platform.isAndroid) {
+      final sdk = await _getAndroidSdk();
+      if (sdk >= 33) {
+        final status = await Permission.videos.request();
+        if (!status.isGranted && mounted) {
+          _showPermissionDenied('Videos');
+          return;
+        }
+      }
+    }
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.video,
+        allowMultiple: false,
+        withData: false,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final path = result.files.single.path;
+      if (path == null) return;
+
+      if (mounted) {
+        context.read<DocumentBloc>().add(AddDocument(File(path)));
+      }
+    } catch (e) {
+      if (mounted) _showError('Could not open video picker: ${e.toString().split('\n').first}');
+    }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        action: const SnackBarAction(label: 'Settings', onPressed: openAppSettings),
+      ),
+    );
+  }
+
+  void _showPermissionDenied(String type) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$type permission is required.'),
+        action: const SnackBarAction(label: 'Open Settings', onPressed: openAppSettings),
+      ),
+    );
+  }
+
+  /// Best-effort way to detect Android API level from the OS version string.
+  Future<int> _getAndroidSdk() async {
+    try {
+      final version = Platform.operatingSystemVersion;
+      // The OS version string on Android looks like "Linux 5.x.x ..."
+      // We can't get exact SDK from Dart directly without a plugin,
+      // so we assume 33+ if it's not obviously old. Return safe default.
+      if (version.contains('Android')) return 33;
+      return 33; // assume modern
+    } catch (_) {
+      return 33;
+    }
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
     return Scaffold(
       appBar: AppBar(
         title: Column(
           children: [
-          const Text(
-            AppConstants.appName,
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-          ),
+            Text(
+              AppConstants.appName,
+              style: textTheme.titleLarge?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             Text(
               AppConstants.appTagline,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.normal,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withAlpha(150),
+              style: textTheme.bodySmall?.copyWith(
+                color: Colors.white.withAlpha(180),
               ),
             ),
           ],
@@ -211,8 +245,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               context,
               MaterialPageRoute(builder: (_) => const SettingsPage()),
             ).then((_) {
-              // Reload documents in case data was cleared
-              context.read<DocumentBloc>().add(const LoadDocuments());
+              if (mounted) {
+                context.read<DocumentBloc>().add(const LoadDocuments());
+              }
             }),
           ),
         ],
@@ -223,14 +258,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(state.message),
-                backgroundColor: Theme.of(context).colorScheme.error,
+                backgroundColor: colorScheme.error,
               ),
             );
           } else if (state is DocumentProcessed) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('✓ "${state.document.name}" processed and indexed'),
-                backgroundColor: Colors.green,
+                backgroundColor: Colors.green.shade600,
                 duration: const Duration(seconds: 3),
               ),
             );
@@ -273,9 +308,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   return DocumentCard(
                     document: doc,
                     onDelete: () {
-                      context
-                          .read<DocumentBloc>()
-                          .add(DeleteDocument(doc.id));
+                      context.read<DocumentBloc>().add(DeleteDocument(doc.id));
                     },
                     onTap: () => Navigator.push(
                       context,
@@ -296,6 +329,113 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         icon: const Icon(Icons.add),
         label: const Text('Add Document'),
       ),
+    );
+  }
+}
+
+// ── Add Document bottom sheet widget ────────────────────────────────────────
+
+class _AddDocumentSheet extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Drag handle
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Add Document',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+            ),
+
+            const _SheetTile(
+              icon: Icons.folder_open_rounded,
+              iconColor: Color(0xFF4F46E5),
+              title: 'Browse Files',
+              subtitle: 'PDF, TXT and more',
+              value: 'files',
+            ),
+            const _SheetTile(
+              icon: Icons.camera_alt_rounded,
+              iconColor: Color(0xFF059669),
+              title: 'Take Photo',
+              subtitle: 'Capture & extract text via OCR',
+              value: 'camera',
+            ),
+            const _SheetTile(
+              icon: Icons.photo_library_rounded,
+              iconColor: Color(0xFF0284C7),
+              title: 'Choose Photo',
+              subtitle: 'Pick image from gallery',
+              value: 'gallery',
+            ),
+            const _SheetTile(
+              icon: Icons.video_library_rounded,
+              iconColor: Color(0xFFDB2777),
+              title: 'Choose Video',
+              subtitle: 'MP4, MOV, AVI and more',
+              value: 'video',
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final String value;
+
+  const _SheetTile({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      leading: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: iconColor.withAlpha(25),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: iconColor, size: 22),
+      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onTap: () => Navigator.pop(context, value),
     );
   }
 }

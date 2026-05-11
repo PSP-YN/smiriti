@@ -52,14 +52,9 @@ class DocumentRepositoryImpl implements DocumentRepository {
 
   @override
   Future<List<String>> extractTextFromDocument(Document document) async {
-    switch (document.type.toLowerCase()) {
-      case 'pdf':
-        return _localDataSource.extractTextFromPdf(document.path);
-      case 'txt':
-        return _localDataSource.extractTextFromTxt(document.path);
-      default:
-        return [];
-    }
+    // Delegate entirely to saveDocument which handles extraction internally.
+    // This method is kept for repository interface compliance.
+    return document.extractedText;
   }
 
   @override

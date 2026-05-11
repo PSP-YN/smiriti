@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
@@ -20,191 +21,339 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
   bool _isProcessing = false;
   String _status = '';
 
-  Future<void> _captureImage(ImageSource source) async {
-    // Request camera permission if using camera
-    if (source == ImageSource.camera) {
-      final cameraStatus = await Permission.camera.request();
-      if (!cameraStatus.isGranted) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Camera permission is required'),
-              action: SnackBarAction(
-                label: 'Settings',
-                onPressed: openAppSettings,
-              ),
-            ),
-          );
-        }
-        return;
-      }
+  // ── Camera capture ────────────────────────────────────────────────────────
+
+  Future<void> _captureFromCamera() async {
+    final cameraStatus = await Permission.camera.request();
+    if (!cameraStatus.isGranted) {
+      if (mounted) _showPermissionDenied('Camera');
+      return;
     }
 
-    setState(() {
-      _isProcessing = true;
-      _status = source == ImageSource.camera
-          ? 'Opening camera...'
-          : 'Opening gallery...';
-    });
+    _setProcessing(true, 'Opening camera...');
 
     try {
       final photo = await _picker.pickImage(
-        source: source,
+        source: ImageSource.camera,
         maxWidth: 2048,
         maxHeight: 2048,
         imageQuality: 92,
       );
-
       if (photo == null) {
-        setState(() {
-          _isProcessing = false;
-          _status = '';
-        });
+        _setProcessing(false);
         return;
       }
+      await _processImageFile(photo.path, photo.name);
+    } catch (e) {
+      _handleError(e);
+    }
+  }
 
-      setState(() => _status = 'Saving image...');
+  // ── Gallery picker ────────────────────────────────────────────────────────
 
-      final appDir = await getApplicationDocumentsDirectory();
-      final documentsDir = Directory('${appDir.path}/documents');
-      if (!await documentsDir.exists()) {
-        await documentsDir.create(recursive: true);
+  Future<void> _pickFromGallery() async {
+    _setProcessing(true, 'Opening gallery...');
+    try {
+      final photo = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 2048,
+        maxHeight: 2048,
+        imageQuality: 92,
+      );
+      if (photo == null) {
+        _setProcessing(false);
+        return;
       }
+      await _processImageFile(photo.path, photo.name);
+    } catch (e) {
+      _handleError(e);
+    }
+  }
 
-      final id = DateTime.now().millisecondsSinceEpoch;
-      final ext = photo.name.split('.').last.toLowerCase();
-      final destPath = '${documentsDir.path}/${id}_capture.$ext';
-      await File(photo.path).copy(destPath);
+  // ── File picker (PDF, TXT, Audio, Video) ──────────────────────────────────
 
+  Future<void> _pickDocument() async {
+    _setProcessing(true, 'Opening file browser...');
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const [
+          'pdf', 'txt',
+          'mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac',
+          'mp4', 'mov', 'avi', 'mkv',
+        ],
+        allowMultiple: false,
+        withData: false,
+      );
+      if (result == null || result.files.isEmpty) {
+        _setProcessing(false);
+        return;
+      }
+      final path = result.files.single.path;
+      if (path == null) {
+        _setProcessing(false);
+        return;
+      }
+      _setProcessing(true, 'Processing document...');
       if (mounted) {
-        context.read<DocumentBloc>().add(AddDocument(File(destPath)));
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Image captured — extracting text...'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        context.read<DocumentBloc>().add(AddDocument(File(path)));
+        _showSuccess('Processing document…');
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isProcessing = false;
-          _status = '';
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString().split('\n').first}')),
-        );
-      }
+      _handleError(e);
     }
   }
+
+  // ── Shared file processing ────────────────────────────────────────────────
+
+  Future<void> _processImageFile(String sourcePath, String name) async {
+    _setProcessing(true, 'Saving image...');
+
+    final appDir = await getApplicationDocumentsDirectory();
+    final docsDir = Directory('${appDir.path}/documents');
+    if (!await docsDir.exists()) await docsDir.create(recursive: true);
+
+    final id = DateTime.now().millisecondsSinceEpoch;
+    final ext = name.contains('.') ? name.split('.').last.toLowerCase() : 'jpg';
+    final destPath = '${docsDir.path}/${id}_capture.$ext';
+    await File(sourcePath).copy(destPath);
+
+    if (mounted) {
+      context.read<DocumentBloc>().add(AddDocument(File(destPath)));
+      _showSuccess('Image captured — extracting text via OCR…');
+      Navigator.pop(context);
+    }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  void _setProcessing(bool value, [String status = '']) {
+    if (mounted) setState(() { _isProcessing = value; _status = status; });
+  }
+
+  void _handleError(Object e) {
+    _setProcessing(false);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.toString().split('\n').first}')),
+      );
+    }
+  }
+
+  void _showSuccess(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  void _showPermissionDenied(String type) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$type permission is required.'),
+        action: const SnackBarAction(label: 'Settings', onPressed: openAppSettings),
+      ),
+    );
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Capture Document'),
         centerTitle: true,
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Icon(
-              Icons.document_scanner,
-              size: 80,
-              color: colorScheme.primary.withAlpha(140),
+            const SizedBox(height: 16),
+
+            // Icon
+            Center(
+              child: Container(
+                width: 96,
+                height: 96,
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Icon(
+                  Icons.document_scanner_rounded,
+                  size: 52,
+                  color: colorScheme.primary,
+                ),
+              ),
             ),
-            const SizedBox(height: 24),
-            const Text(
-              'Capture or select an image',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+            const SizedBox(height: 20),
+
+            Text(
+              'Add a Document',
+              textAlign: TextAlign.center,
+              style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
-              'Text will be automatically extracted using OCR',
+              'Capture, pick an image, or browse for files.\nText is extracted automatically.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                color: colorScheme.onSurface.withAlpha(150),
-              ),
+              style: textTheme.bodyMedium,
             ),
-            const SizedBox(height: 40),
-            if (_isProcessing)
-              Column(
-                children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  Text(
-                    _status,
-                    style: TextStyle(color: colorScheme.onSurface.withAlpha(160)),
-                  ),
-                ],
-              )
-            else
-              Column(
-                children: [
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: FilledButton.icon(
-                      onPressed: () => _captureImage(ImageSource.camera),
-                      icon: const Icon(Icons.camera_alt),
-                      label: const Text('Take Photo'),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: OutlinedButton.icon(
-                      onPressed: () => _captureImage(ImageSource.gallery),
-                      icon: const Icon(Icons.photo_library),
-                      label: const Text('Choose from Gallery'),
-                    ),
-                  ),
-                ],
-              ),
             const SizedBox(height: 32),
-            // Tips
+
+            // ── Action buttons ───────────────────────────────────────────────
+
+            if (_isProcessing) ...[
+              const Center(child: CircularProgressIndicator()),
+              const SizedBox(height: 12),
+              Text(
+                _status,
+                textAlign: TextAlign.center,
+                style: textTheme.bodySmall,
+              ),
+            ] else ...[
+              _ActionButton(
+                icon: Icons.camera_alt_rounded,
+                label: 'Take Photo',
+                subtitle: 'Extract text via OCR',
+                color: const Color(0xFF059669),
+                onPressed: _captureFromCamera,
+              ),
+              const SizedBox(height: 12),
+              _ActionButton(
+                icon: Icons.photo_library_rounded,
+                label: 'Choose from Gallery',
+                subtitle: 'Pick any image',
+                color: const Color(0xFF0284C7),
+                onPressed: _pickFromGallery,
+              ),
+              const SizedBox(height: 12),
+              _ActionButton(
+                icon: Icons.folder_open_rounded,
+                label: 'Browse Files',
+                subtitle: 'PDF, Audio, Video & more',
+                color: const Color(0xFF4F46E5),
+                onPressed: _pickDocument,
+              ),
+            ],
+
+            const SizedBox(height: 28),
+
+            // ── Tips ─────────────────────────────────────────────────────────
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: colorScheme.primaryContainer.withAlpha(40),
-                borderRadius: BorderRadius.circular(12),
+                color: colorScheme.primaryContainer.withAlpha(50),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: colorScheme.primary.withAlpha(40),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.lightbulb_outline,
+                      Icon(Icons.tips_and_updates_rounded,
                           size: 16, color: colorScheme.primary),
                       const SizedBox(width: 8),
                       Text(
                         'Tips for best OCR results',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: colorScheme.primary,
-                        ),
+                        style: textTheme.labelLarge
+                            ?.copyWith(color: colorScheme.primary),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   const Text(
-                    '• Ensure good, even lighting\n'
-                    '• Keep the document flat and level\n'
+                    '• Use even, bright lighting\n'
+                    '• Keep the document flat and still\n'
                     '• Avoid shadows and glare\n'
-                    '• Make sure all text is within the frame',
-                    style: TextStyle(fontSize: 13, height: 1.6),
+                    '• Ensure all text is within the frame\n'
+                    '• Higher resolution = better accuracy',
+                    style: TextStyle(fontSize: 13, height: 1.65),
                   ),
                 ],
               ),
             ),
+            const SizedBox(height: 24),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Action button widget ──────────────────────────────────────────────────────
+
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onPressed;
+
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.color,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          decoration: BoxDecoration(
+            border: Border.all(color: color.withAlpha(80), width: 1.5),
+            borderRadius: BorderRadius.circular(16),
+            color: color.withAlpha(12),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: color.withAlpha(25),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 15)),
+                    Text(subtitle,
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withAlpha(140))),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios_rounded,
+                  size: 14, color: color.withAlpha(180)),
+            ],
+          ),
         ),
       ),
     );

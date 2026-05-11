@@ -19,8 +19,6 @@ class _ModelDownloadPageState extends State<ModelDownloadPage> {
   void initState() {
     super.initState();
     _loadModels();
-    
-    // Listen to download progress
     ModelManager.progressNotifier.addListener(_onProgressUpdate);
   }
 
@@ -31,70 +29,63 @@ class _ModelDownloadPageState extends State<ModelDownloadPage> {
   }
 
   void _onProgressUpdate() {
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadModels() async {
-    setState(() => _isLoading = true);
-    
+    if (mounted) setState(() => _isLoading = true);
     final models = ModelManager.availableModels;
     final downloaded = <String, bool>{};
-    
-    for (final model in models) {
-      downloaded[model.id] = await ModelManager.isModelDownloaded(model.id);
+    for (final m in models) {
+      downloaded[m.id] = await ModelManager.isModelDownloaded(m.id);
     }
-    
-    final activeModel = await ModelManager.getActiveModel();
-    
-    setState(() {
-      _models = models;
-      _downloadedModels = downloaded;
-      _activeModelId = activeModel?.id;
-      _isLoading = false;
-    });
+    final active = await ModelManager.getActiveModel();
+    if (mounted) {
+      setState(() {
+        _models = models;
+        _downloadedModels = downloaded;
+        _activeModelId = active?.id;
+        _isLoading = false;
+      });
+    }
   }
 
+  // ── Download ──────────────────────────────────────────────────────────────
+
   Future<void> _downloadModel(ModelInfo model) async {
+    final hasNet = await ModelManager.hasInternetConnection();
+    if (!hasNet) {
+      _showError(
+          'No internet connection. Connect to WiFi or mobile data and try again.');
+      return;
+    }
+
     try {
-      final canDownload = await ModelManager.canDownloadModel(model);
-      if (!canDownload) {
-        _showError('Please connect to Wi-Fi to download large models (>500MB).');
-        return;
-      }
-
-      await ModelManager.downloadModel(
-        model.id,
-        onProgress: (progress) {
-          // Progress is automatically reflected via ValueNotifier
-        },
-      );
-
+      await ModelManager.downloadModel(model.id);
       await _loadModels();
-      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${model.name} downloaded successfully')),
+          SnackBar(
+            content: Text('${model.name} downloaded successfully ✓'),
+            backgroundColor: Colors.green.shade600,
+          ),
         );
       }
     } catch (e) {
-      _showError('Download failed: $e');
+      _showError('Download failed: ${e.toString().split('\n').first}');
     }
   }
 
   Future<void> _setActiveModel(String modelId) async {
-    if (!_downloadedModels[modelId]!) {
+    if (_downloadedModels[modelId] != true) {
       _showError('Please download the model first.');
       return;
     }
-
     await ModelManager.setActiveModel(modelId);
-    setState(() => _activeModelId = modelId);
-    
+    if (mounted) setState(() => _activeModelId = modelId);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Model activated')),
+        const SnackBar(content: Text('Model activated ✓')),
       );
     }
   }
@@ -102,219 +93,345 @@ class _ModelDownloadPageState extends State<ModelDownloadPage> {
   Future<void> _deleteModel(ModelInfo model) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Delete Model'),
-        content: Text('Delete ${model.name}? This will free up ${model.sizeMB} MB.'),
+        content:
+            Text('Delete ${model.name}? This will free ~${model.sizeMB} MB.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
           TextButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
-
     if (confirmed == true) {
       await ModelManager.deleteModel(model.id);
       await _loadModels();
     }
   }
 
-  void _showError(String message) {
+  void _showError(String msg) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: Colors.red),
+        SnackBar(content: Text(msg), backgroundColor: Colors.red.shade600),
       );
     }
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final progress = ModelManager.progressNotifier.value;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('AI Models'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('AI Models'), centerTitle: true),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               children: [
-                // Download progress indicator
-                if (progress != null && progress.status == 'downloading')
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    color: Theme.of(context).colorScheme.primaryContainer.withAlpha(50),
-                    child: Column(
+                // ── Info banner ──────────────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer.withAlpha(60),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                          color: colorScheme.primary.withAlpha(40)),
+                    ),
+                    child: Row(
                       children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.downloading),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Downloading ${progress.modelId}...',
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            Text('${progress.percentage.toStringAsFixed(1)}%'),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        LinearProgressIndicator(
-                          value: progress.percentage / 100,
-                          minHeight: 8,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${(progress.downloadedBytes / 1024 / 1024).toStringAsFixed(1)} MB / ${(progress.totalBytes / 1024 / 1024).toStringAsFixed(1)} MB',
-                          style: const TextStyle(fontSize: 12),
+                        Icon(Icons.info_outline_rounded,
+                            color: colorScheme.primary, size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Models can be downloaded over WiFi or mobile data. '
+                            'No WiFi required.',
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: colorScheme.onPrimaryContainer),
+                          ),
                         ),
                       ],
                     ),
                   ),
+                ),
 
-                // Storage info
+                // ── Active download progress ──────────────────────────────────
+                if (progress != null && progress.status == 'downloading')
+                  _DownloadProgressBanner(progress: progress),
+
+                // ── Storage summary ───────────────────────────────────────────
                 FutureBuilder<Map<String, dynamic>>(
                   future: ModelManager.getStorageInfo(),
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData) return const SizedBox.shrink();
-                    
-                    final info = snapshot.data!;
+                  builder: (ctx, snap) {
+                    if (!snap.hasData) return const SizedBox.shrink();
+                    final info = snap.data!;
                     return ListTile(
-                      leading: const Icon(Icons.storage),
-                      title: const Text('Storage Used'),
+                      leading: const Icon(Icons.storage_rounded),
+                      title: const Text('Downloaded models'),
                       subtitle: Text(
-                        '${info['totalModels']} models • ${info['totalSizeMB']} MB',
-                      ),
-                      trailing: TextButton(
-                        onPressed: () => _showStorageDetails(info),
-                        child: const Text('Manage'),
-                      ),
+                          '${info['totalModels']} models · ${info['totalSizeMB']} MB'),
                     );
                   },
                 ),
 
-                const Divider(),
+                const Divider(height: 1),
 
-                // Model list
-                ..._models.map((model) => _buildModelCard(model, progress)),
+                // ── Model cards ───────────────────────────────────────────────
+                ..._models.map((m) => _ModelCard(
+                      model: m,
+                      isDownloaded: _downloadedModels[m.id] ?? false,
+                      isActive: _activeModelId == m.id,
+                      isDownloading: progress?.modelId == m.id &&
+                          progress?.status == 'downloading',
+                      progressPct: (progress?.modelId == m.id)
+                          ? progress?.percentage
+                          : null,
+                      onDownload: () => _downloadModel(m),
+                      onActivate: () => _setActiveModel(m.id),
+                      onDelete: () => _deleteModel(m),
+                    )),
               ],
             ),
     );
   }
+}
 
-  Widget _buildModelCard(ModelInfo model, DownloadProgress? progress) {
-    final isDownloaded = _downloadedModels[model.id] ?? false;
-    final isActive = _activeModelId == model.id;
-    final isDownloading = progress?.modelId == model.id && progress?.status == 'downloading';
+// ── Sub-widgets ───────────────────────────────────────────────────────────────
 
-    return Card(
+class _DownloadProgressBanner extends StatelessWidget {
+  final DownloadProgress progress;
+  const _DownloadProgressBanner({required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final dlMB = (progress.downloadedBytes / 1024 / 1024).toStringAsFixed(1);
+    final totalMB = (progress.totalBytes / 1024 / 1024).toStringAsFixed(1);
+
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withAlpha(70),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.downloading_rounded, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Downloading ${progress.modelId}…',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text('${progress.percentage.toStringAsFixed(1)}%',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress.percentage / 100,
+              minHeight: 8,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text('$dlMB MB / $totalMB MB',
+              style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModelCard extends StatelessWidget {
+  final ModelInfo model;
+  final bool isDownloaded;
+  final bool isActive;
+  final bool isDownloading;
+  final double? progressPct;
+  final VoidCallback onDownload;
+  final VoidCallback onActivate;
+  final VoidCallback onDelete;
+
+  const _ModelCard({
+    required this.model,
+    required this.isDownloaded,
+    required this.isActive,
+    required this.isDownloading,
+    required this.progressPct,
+    required this.onDownload,
+    required this.onActivate,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isActive
+              ? colorScheme.primary.withAlpha(100)
+              : colorScheme.outline.withAlpha(60),
+          width: isActive ? 2 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(8),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          )
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Header ────────────────────────────────────────────────────
             Row(
               children: [
-                Icon(
-                  Icons.model_training,
-                  color: isActive ? Colors.green : null,
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? colorScheme.primaryContainer
+                        : colorScheme.surfaceVariant,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.memory_rounded,
+                    color: isActive
+                        ? colorScheme.primary
+                        : colorScheme.onSurface.withAlpha(160),
+                    size: 24,
+                  ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        model.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
+                      Text(model.name,
+                          style: textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold)),
                       if (model.isDefault)
-                        const Text(
-                          'Recommended',
-                          style: TextStyle(
-                            color: Colors.green,
-                            fontSize: 12,
-                          ),
-                        ),
+                        Text('⭐ Recommended',
+                            style: textTheme.bodySmall
+                                ?.copyWith(color: Colors.amber.shade700)),
                       if (model.isFallback)
-                        const Text(
-                          'Low-RAM devices',
-                          style: TextStyle(
-                            color: Colors.orange,
-                            fontSize: 12,
-                          ),
-                        ),
+                        Text('Low-RAM devices',
+                            style: textTheme.bodySmall
+                                ?.copyWith(color: Colors.orange.shade600)),
                     ],
                   ),
                 ),
                 if (isActive)
-                  Chip(
-                    label: const Text('Active'),
-                    backgroundColor: Colors.green.withAlpha(50),
-                    side: BorderSide.none,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withAlpha(30),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text('Active',
+                        style: TextStyle(
+                            color: Colors.green,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600)),
                   ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              model.description,
-              style: TextStyle(
-                fontSize: 14,
-                color: Theme.of(context).colorScheme.onSurface.withAlpha(180),
-              ),
-            ),
-            const SizedBox(height: 8),
+
+            const SizedBox(height: 10),
+            Text(model.description, style: textTheme.bodySmall),
+
+            const SizedBox(height: 10),
             Row(
               children: [
-                Icon(Icons.storage, size: 16, color: Colors.grey[600]),
+                Icon(Icons.storage_rounded,
+                    size: 14, color: colorScheme.outline),
                 const SizedBox(width: 4),
-                Text('${model.sizeMB} MB', style: const TextStyle(fontSize: 12)),
+                Text('${model.sizeMB} MB',
+                    style: textTheme.bodySmall),
                 const SizedBox(width: 16),
-                Icon(Icons.memory, size: 16, color: Colors.grey[600]),
+                Icon(Icons.memory_rounded,
+                    size: 14, color: colorScheme.outline),
                 const SizedBox(width: 4),
-                Text('${model.minRamMB}+ MB RAM', style: const TextStyle(fontSize: 12)),
+                Text('≥${model.minRamMB} MB RAM',
+                    style: textTheme.bodySmall),
               ],
             ),
-            const SizedBox(height: 12),
+
+            // ── Download progress ──────────────────────────────────────────
+            if (isDownloading && progressPct != null) ...[
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: (progressPct ?? 0) / 100,
+                  minHeight: 6,
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 14),
+
+            // ── Action row ─────────────────────────────────────────────────
             Row(
               children: [
                 if (!isDownloaded && !isDownloading)
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: () => _downloadModel(model),
-                      icon: const Icon(Icons.download),
+                      onPressed: onDownload,
+                      icon: const Icon(Icons.download_rounded, size: 18),
                       label: const Text('Download'),
                     ),
                   ),
+
                 if (isDownloading)
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: null,
                       icon: const SizedBox(
-                        width: 16,
-                        height: 16,
+                        width: 14,
+                        height: 14,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
-                      label: const Text('Downloading...'),
+                      label: const Text('Downloading…'),
                     ),
                   ),
+
                 if (isDownloaded) ...[
                   if (!isActive)
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () => _setActiveModel(model.id),
+                        onPressed: onActivate,
                         child: const Text('Activate'),
                       ),
                     ),
@@ -322,54 +439,28 @@ class _ModelDownloadPageState extends State<ModelDownloadPage> {
                     const Expanded(
                       child: OutlinedButton(
                         onPressed: null,
-                        child: Text('Currently Active'),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.check_rounded,
+                                size: 16, color: Colors.green),
+                            SizedBox(width: 6),
+                            Text('Active',
+                                style: TextStyle(color: Colors.green)),
+                          ],
+                        ),
                       ),
                     ),
                   const SizedBox(width: 8),
                   IconButton(
-                    onPressed: () => _deleteModel(model),
-                    icon: const Icon(Icons.delete_outline),
+                    onPressed: onDelete,
+                    icon: const Icon(Icons.delete_outline_rounded),
                     color: Colors.red,
+                    tooltip: 'Delete model',
                   ),
                 ],
               ],
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showStorageDetails(Map<String, dynamic> info) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Storage Details',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 16),
-            if ((info['models'] as List).isEmpty)
-              const Text('No models downloaded yet.')
-            else
-              ...((info['models'] as List).map((m) => ListTile(
-                    title: Text(m['name'] as String),
-                    subtitle: Text('${m['sizeMB']} MB'),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete),
-                      onPressed: () async {
-                        final nav = Navigator.of(context);
-                        await ModelManager.deleteModel(m['id'] as String);
-                        nav.pop();
-                        _loadModels();
-                      },
-                    ),
-                  ))),
           ],
         ),
       ),

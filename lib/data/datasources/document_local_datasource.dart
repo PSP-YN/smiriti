@@ -19,10 +19,6 @@ abstract class DocumentLocalDataSource {
   Future<void> deleteDocument(String id);
   Future<void> saveDocumentChunks(String documentId, List<DocumentChunk> chunks);
   Future<List<DocumentChunk>> getDocumentChunks(String documentId);
-  Future<List<String>> extractTextFromPdf(String filePath);
-  Future<List<String>> extractTextFromTxt(String filePath);
-  Future<List<String>> extractTextFromImage(String filePath);
-  Future<List<String>> extractTextFromAudio(String filePath);
 }
 
 class DocumentLocalDataSourceImpl implements DocumentLocalDataSource {
@@ -30,188 +26,185 @@ class DocumentLocalDataSourceImpl implements DocumentLocalDataSource {
 
   DocumentLocalDataSourceImpl(this._prefs);
 
+  // ── Read ──────────────────────────────────────────────────────────────────
+
   @override
   Future<List<Document>> getAllDocuments() async {
-    final jsonString = _prefs.getString(AppConstants.documentsKey);
-    if (jsonString == null) return [];
-
-    final List<dynamic> jsonList = json.decode(jsonString);
-    return jsonList.map((json) => Document.fromJson(json)).toList();
+    final json = _prefs.getString(AppConstants.documentsKey);
+    if (json == null) return [];
+    try {
+      final list = jsonDecode(json) as List<dynamic>;
+      return list.map((j) => Document.fromJson(j as Map<String, dynamic>)).toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   @override
   Future<Document?> getDocumentById(String id) async {
-    final documents = await getAllDocuments();
+    final docs = await getAllDocuments();
     try {
-      return documents.firstWhere((doc) => doc.id == id);
+      return docs.firstWhere((d) => d.id == id);
     } catch (_) {
       return null;
     }
   }
 
+  // ── Write ─────────────────────────────────────────────────────────────────
+
   @override
   Future<Document> saveDocument(File file) async {
     final appDir = await getApplicationDocumentsDirectory();
-    final documentsDir = Directory('${appDir.path}/documents');
-    if (!await documentsDir.exists()) {
-      await documentsDir.create(recursive: true);
-    }
+    final docsDir = Directory('${appDir.path}/documents');
+    if (!await docsDir.exists()) await docsDir.create(recursive: true);
 
-    final fileName = file.path.split('/').last;
-    final extension = fileName.split('.').last.toLowerCase();
+    final origName = file.path.split('/').last;
+    final extension = origName.contains('.')
+        ? origName.split('.').last.toLowerCase()
+        : 'bin';
     final id = DateTime.now().millisecondsSinceEpoch.toString();
-    final newFileName = '${id}_$fileName';
-    final newPath = '${documentsDir.path}/$newFileName';
+    final destPath = '${docsDir.path}/${id}_$origName';
 
-    await file.copy(newPath);
+    await file.copy(destPath);
 
-    int pageCount = 0;
-    List<String> extractedText = [];
+    // ── Text extraction ────────────────────────────────────────────────────
+    final List<String> extractedText;
+    int pageCount;
 
-    if (extension == 'pdf') {
-      extractedText = await extractTextFromPdf(newPath);
+    if (AppConstants.documentExtensions.contains(extension)) {
+      if (extension == 'pdf') {
+        extractedText = await _extractPdf(destPath);
+      } else {
+        extractedText = await _extractTxt(destPath);
+      }
       pageCount = extractedText.length;
-    } else if (extension == 'txt') {
-      extractedText = await extractTextFromTxt(newPath);
+    } else if (AppConstants.imageExtensions.contains(extension)) {
+      extractedText = await _extractImage(destPath);
       pageCount = 1;
-    } else if (['jpg', 'jpeg', 'png', 'webp', 'bmp'].contains(extension)) {
-      extractedText = await extractTextFromImage(newPath);
+    } else if (AppConstants.audioExtensions.contains(extension)) {
+      extractedText = await _extractAudio(destPath);
       pageCount = 1;
-    } else if (['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac'].contains(extension)) {
-      extractedText = await extractTextFromAudio(newPath);
+    } else if (AppConstants.videoExtensions.contains(extension)) {
+      // For video, extract audio track and transcribe
+      extractedText = await _extractAudio(destPath);
       pageCount = 1;
+    } else {
+      extractedText = [];
+      pageCount = 0;
     }
 
     final document = Document(
       id: id,
-      name: fileName,
-      path: newPath,
+      name: origName,
+      path: destPath,
       type: extension,
       createdAt: DateTime.now(),
       pageCount: pageCount,
       extractedText: extractedText,
     );
 
-    final documents = await getAllDocuments();
-    documents.add(document);
-    await _saveDocuments(documents);
+    // Persist metadata
+    final docs = await getAllDocuments();
+    docs.add(document);
+    await _persistDocuments(docs);
 
     return document;
   }
 
   @override
   Future<void> deleteDocument(String id) async {
-    // Delete from SharedPreferences
-    final documents = await getAllDocuments();
-    final docIndex = documents.indexWhere((doc) => doc.id == id);
-    
-    if (docIndex != -1) {
-      final doc = documents[docIndex];
-      final file = File(doc.path);
-      if (await file.exists()) {
-        await file.delete();
-      }
-      documents.removeAt(docIndex);
-      await _saveDocuments(documents);
+    final docs = await getAllDocuments();
+    final idx = docs.indexWhere((d) => d.id == id);
+    if (idx != -1) {
+      final file = File(docs[idx].path);
+      if (await file.exists()) await file.delete();
+      docs.removeAt(idx);
+      await _persistDocuments(docs);
     }
-    
-    // Delete from ObjectBox (including chunks)
     ObjectBoxStore.deleteDocument(id);
   }
 
+  // ── Chunks ────────────────────────────────────────────────────────────────
+
   @override
   Future<void> saveDocumentChunks(
-    String documentId,
-    List<DocumentChunk> chunks,
-  ) async {
-    final chunksJson = chunks.map((c) => c.toJson()).toList();
+      String documentId, List<DocumentChunk> chunks) async {
     await _prefs.setString(
       'chunks_$documentId',
-      json.encode(chunksJson),
+      jsonEncode(chunks.map((c) => c.toJson()).toList()),
     );
   }
 
   @override
   Future<List<DocumentChunk>> getDocumentChunks(String documentId) async {
-    final jsonString = _prefs.getString('chunks_$documentId');
-    if (jsonString == null) return [];
-
-    final List<dynamic> jsonList = json.decode(jsonString);
-    return jsonList.map((json) => DocumentChunk.fromJson(json)).toList();
+    final json = _prefs.getString('chunks_$documentId');
+    if (json == null) return [];
+    try {
+      final list = jsonDecode(json) as List<dynamic>;
+      return list
+          .map((j) => DocumentChunk.fromJson(j as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
   }
 
-  @override
-  Future<List<String>> extractTextFromPdf(String filePath) async {
+  // ── Private extraction helpers ────────────────────────────────────────────
+
+  Future<List<String>> _extractPdf(String path) async {
     try {
-      final bytes = await File(filePath).readAsBytes();
-      final document = PdfDocument(inputBytes: bytes);
-      final List<String> pages = [];
-
-      // Create extractor once for the document
-      final textExtractor = PdfTextExtractor(document);
-
-      for (var i = 0; i < document.pages.count; i++) {
-        final text = textExtractor.extractText(startPageIndex: i, endPageIndex: i);
-        pages.add(text);
+      final bytes = await File(path).readAsBytes();
+      final doc = PdfDocument(inputBytes: bytes);
+      final extractor = PdfTextExtractor(doc);
+      final pages = <String>[];
+      for (var i = 0; i < doc.pages.count; i++) {
+        final text = extractor.extractText(startPageIndex: i, endPageIndex: i);
+        if (text.trim().isNotEmpty) pages.add(text);
       }
-
-      document.dispose();
+      doc.dispose();
       return pages;
     } catch (e) {
-      return ['Error extracting PDF: $e'];
+      return ['[PDF extraction error: $e]'];
     }
   }
 
-  @override
-  Future<List<String>> extractTextFromTxt(String filePath) async {
+  Future<List<String>> _extractTxt(String path) async {
     try {
-      final content = await File(filePath).readAsString();
+      final content = await File(path).readAsString();
       return [content];
     } catch (e) {
-      return ['Error reading text file: $e'];
+      return ['[Text file error: $e]'];
     }
   }
 
-  @override
-  Future<List<String>> extractTextFromImage(String filePath) async {
+  Future<List<String>> _extractImage(String path) async {
     try {
-      // Initialize OCR if needed
       await OCRService.initialize();
-      
-      // Process image with OCR
-      final result = await OCRService.processImage(filePath);
-      
-      if (result.hasContent) {
-        return [result.text];
-      } else {
-        return ['No text detected in image'];
-      }
+      final result = await OCRService.processImage(path, preprocess: true);
+      return result.hasContent ? [result.text] : ['[No text detected in image]'];
     } catch (e) {
-      return ['Error processing image: $e'];
+      return ['[OCR error: $e]'];
     }
   }
 
-  @override
-  Future<List<String>> extractTextFromAudio(String filePath) async {
+  Future<List<String>> _extractAudio(String path) async {
     try {
-      // Initialize transcription service
       await AudioTranscriptionService.initialize();
-      
-      // Transcribe audio
-      final result = await AudioTranscriptionService.transcribe(filePath);
-      
-      if (result.text.isNotEmpty) {
-        return [result.text];
-      } else {
-        return ['No speech detected in audio'];
-      }
+      final result = await AudioTranscriptionService.transcribe(path);
+      return result.text.isNotEmpty
+          ? [result.text]
+          : ['[No speech detected in audio]'];
     } catch (e) {
-      return ['Error transcribing audio: $e'];
+      return ['[Audio transcription error: $e]'];
     }
   }
 
-  Future<void> _saveDocuments(List<Document> documents) async {
-    final jsonList = documents.map((d) => d.toJson()).toList();
-    await _prefs.setString(AppConstants.documentsKey, json.encode(jsonList));
+  // ── Persistence ───────────────────────────────────────────────────────────
+
+  Future<void> _persistDocuments(List<Document> docs) async {
+    await _prefs.setString(
+      AppConstants.documentsKey,
+      jsonEncode(docs.map((d) => d.toJson()).toList()),
+    );
   }
 }
