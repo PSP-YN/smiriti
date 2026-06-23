@@ -54,14 +54,7 @@ class _SplashPageState extends State<SplashPage> {
       await Future.delayed(const Duration(seconds: 1));
     }
 
-    // Check if app lock is enabled
-    final lockEnabled = await SecureStorageService.isAppLockEnabled();
-    if (lockEnabled && mounted) {
-      setState(() => _needsAuth = true);
-      await _runBiometricAuth();
-    } else {
-      _navigateHome();
-    }
+    _navigateHome();
   }
 
   Future<void> _runBiometricAuth() async {

@@ -21,9 +21,7 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  bool _biometricEnabled = false;
-  bool _appLockEnabled = false;
-  bool _canUseBiometrics = false;
+  String _activeProvider = 'local';
   bool _embeddingModelReady = false;
   String _embeddingStatus = 'Not downloaded';
   String _llmModelName = 'None';
@@ -31,6 +29,10 @@ class _SettingsPageState extends State<SettingsPage> {
   String _llmModelSize = '';
   String _storageUsed = '—';
   bool _loadingSettings = true;
+
+  final _openaiController = TextEditingController();
+  final _anthropicController = TextEditingController();
+  final _googleController = TextEditingController();
 
   @override
   void initState() {
@@ -42,20 +44,26 @@ class _SettingsPageState extends State<SettingsPage> {
     if (mounted) setState(() => _loadingSettings = true);
     try {
       final results = await Future.wait([
-        SecureStorageService.isBiometricEnabled(),
-        SecureStorageService.isAppLockEnabled(),
-        SecureStorageService.canAuthenticateWithBiometrics(),
+        SecureStorageService.getActiveProvider(),
+        SecureStorageService.getOpenAIKey(),
+        SecureStorageService.getAnthropicKey(),
+        SecureStorageService.getGoogleKey(),
         ModelManager.getActiveModel(),
         ModelManager.getStorageInfo(),
         _getDocumentDirSizeMB(),
       ]);
 
-      final biometricEnabled = results[0] as bool;
-      final appLockEnabled = results[1] as bool;
-      final canBiometric = results[2] as bool;
-      final activeModel = results[3] as ModelInfo?;
-      final storageInfo = results[4] as Map<String, dynamic>;
-      final docSizeMB = results[5] as int;
+      final activeProvider = results[0] as String;
+      final openaiKey = results[1] as String?;
+      final anthropicKey = results[2] as String?;
+      final googleKey = results[3] as String?;
+      final activeModel = results[4] as ModelInfo?;
+      final storageInfo = results[5] as Map<String, dynamic>;
+      final docSizeMB = results[6] as int;
+
+      if (openaiKey != null) _openaiController.text = openaiKey;
+      if (anthropicKey != null) _anthropicController.text = anthropicKey;
+      if (googleKey != null) _googleController.text = googleKey;
 
       final llmDownloaded = activeModel != null &&
           await ModelManager.isModelDownloaded(activeModel.id);
@@ -67,9 +75,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
       if (mounted) {
         setState(() {
-          _biometricEnabled = biometricEnabled;
-          _appLockEnabled = appLockEnabled;
-          _canUseBiometrics = canBiometric;
+          _activeProvider = activeProvider;
           _embeddingModelReady = embeddingReady;
           _embeddingStatus = embeddingReady ? '✓ Ready' : 'Not downloaded';
           _llmModelName = activeModel?.name ?? 'None selected';
@@ -101,38 +107,19 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  // ── Biometric / lock toggles ──────────────────────────────────────────────
+  // ── AI Provider ────────────────────────────────────────────────────────────
 
-  Future<void> _toggleBiometric(bool value) async {
-    if (value && !_canUseBiometrics) {
-      _snack('Biometric authentication is not available on this device.');
-      return;
-    }
-    if (value) {
-      final ok = await SecureStorageService.authenticateWithBiometrics(
-        reason: 'Confirm your identity to enable biometric lock',
-      );
-      if (!ok) {
-        _snack('Authentication failed — biometric lock not enabled.');
-        return;
-      }
-    }
-    await SecureStorageService.setBiometricEnabled(value);
-    if (mounted) setState(() => _biometricEnabled = value);
+  Future<void> _saveProvider(String? value) async {
+    if (value == null) return;
+    await SecureStorageService.setActiveProvider(value);
+    setState(() => _activeProvider = value);
   }
 
-  Future<void> _toggleAppLock(bool value) async {
-    if (value && _canUseBiometrics) {
-      final ok = await SecureStorageService.authenticateWithBiometrics(
-        reason: 'Confirm your identity to enable app lock',
-      );
-      if (!ok) {
-        _snack('Authentication failed — app lock not enabled.');
-        return;
-      }
-    }
-    await SecureStorageService.setAppLockEnabled(value);
-    if (mounted) setState(() => _appLockEnabled = value);
+  Future<void> _saveAPIKey(String provider, String key) async {
+    if (provider == 'openai') await SecureStorageService.setOpenAIKey(key);
+    if (provider == 'anthropic') await SecureStorageService.setAnthropicKey(key);
+    if (provider == 'google') await SecureStorageService.setGoogleKey(key);
+    _snack('API Key saved for $provider');
   }
 
   // ── Clear data ────────────────────────────────────────────────────────────
@@ -227,46 +214,38 @@ class _SettingsPageState extends State<SettingsPage> {
               onRefresh: _loadSettings,
               child: ListView(
                 children: [
-                  // ── Security & Privacy ───────────────────────────────────
-                  _sectionHeader('Security & Privacy'),
+                  // ── AI Provider ──────────────────────────────────────────
+                  _sectionHeader('AI Provider'),
 
-                  SwitchListTile(
-                    secondary: const Icon(Icons.lock_rounded),
-                    title: const Text('App Lock'),
-                    subtitle: const Text('Require authentication on launch'),
-                    value: _appLockEnabled,
-                    onChanged: _toggleAppLock,
-                  ),
-
-                  SwitchListTile(
-                    secondary: const Icon(Icons.fingerprint),
-                    title: const Text('Biometric Authentication'),
-                    subtitle: Text(
-                      _canUseBiometrics
-                          ? 'Fingerprint or face unlock'
-                          : 'Not available on this device',
-                    ),
-                    value: _biometricEnabled,
-                    onChanged: _canUseBiometrics && _appLockEnabled
-                        ? _toggleBiometric
-                        : null,
-                  ),
-
-                  if (!_appLockEnabled)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 72, vertical: 2),
-                      child: Text(
-                        'Enable App Lock first to configure biometrics.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colorScheme.onSurface.withAlpha(120),
-                        ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    child: DropdownButtonFormField<String>(
+                      value: _activeProvider,
+                      decoration: const InputDecoration(
+                        labelText: 'Active AI Provider',
+                        border: OutlineInputBorder(),
                       ),
+                      items: const [
+                        DropdownMenuItem(value: 'local', child: Text('Local (Offline)')),
+                        DropdownMenuItem(value: 'openai', child: Text('OpenAI (Cloud)')),
+                        DropdownMenuItem(value: 'anthropic', child: Text('Anthropic (Cloud)')),
+                        DropdownMenuItem(value: 'google', child: Text('Google Gemini (Cloud)')),
+                      ],
+                      onChanged: _saveProvider,
                     ),
+                  ),
 
-                  // ── AI Models ─────────────────────────────────────────────
-                  _sectionHeader('AI Models'),
+                  if (_activeProvider == 'openai')
+                    _apiKeyTile('OpenAI API Key', _openaiController, 'openai'),
+                  if (_activeProvider == 'anthropic')
+                    _apiKeyTile('Anthropic API Key', _anthropicController, 'anthropic'),
+                  if (_activeProvider == 'google')
+                    _apiKeyTile('Google AI API Key', _googleController, 'google'),
+
+                  const Divider(),
+
+                  // ── AI Models (Local) ────────────────────────────────────
+                  _sectionHeader('Local AI Models'),
 
                   ListTile(
                     leading: Icon(
@@ -384,6 +363,22 @@ class _SettingsPageState extends State<SettingsPage> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _apiKeyTile(String label, TextEditingController controller, String provider) {
+    return ListTile(
+      title: TextField(
+        controller: controller,
+        decoration: InputDecoration(
+          labelText: label,
+          suffixIcon: IconButton(
+            icon: const Icon(Icons.save),
+            onPressed: () => _saveAPIKey(provider, controller.text),
+          ),
+        ),
+        obscureText: true,
+      ),
     );
   }
 

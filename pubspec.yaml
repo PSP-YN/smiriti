@@ -35,9 +35,9 @@ dependencies:
 
   # Security and storage
   crypto: ^3.0.3
-  flutter_secure_storage: ^9.0.0
-  local_auth: ^2.1.8
+  flutter_secure_storage: ^9.2.4
   encrypt: ^5.0.3
+  uuid: ^4.3.3
 
   # Network and I/O
   ffi: ^2.1.0

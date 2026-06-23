@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/constants/app_constants.dart';
 import 'model_manager.dart';
+import 'remote_llm_service.dart';
+import 'secure_storage_service.dart';
 
 // ── FFI typedefs (llama.cpp) ──────────────────────────────────────────────────
 
@@ -93,7 +95,29 @@ class LLMService {
     double topP = AppConstants.llmTopP,
     void Function(String token)? onToken,
   }) async {
-    if (!_isInitialized) throw StateError('LLM not initialized.');
+    final providerStr = await SecureStorageService.getActiveProvider();
+    final provider = LLMProvider.values.firstWhere(
+      (e) => e.name == providerStr,
+      orElse: () => LLMProvider.local,
+    );
+
+    if (provider != LLMProvider.local) {
+      return RemoteLLMService.generate(
+        prompt: prompt,
+        provider: provider,
+        maxTokens: maxTokens,
+        temperature: temperature,
+      );
+    }
+
+    if (!_isInitialized) {
+      try {
+        await initialize();
+      } catch (e) {
+        throw StateError('Local LLM not initialized and failed to auto-initialize: $e');
+      }
+    }
+
     if (_isGenerating) throw StateError('Already generating. Please wait.');
 
     _isGenerating = true;

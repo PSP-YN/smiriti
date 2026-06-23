@@ -54,37 +54,51 @@ class RAGOrchestrator {
     int limit = _maxChunks,
     double threshold = _relevanceThreshold,
     List<String>? documentIds,
+    String? notebookId,
   }) async {
-    // Embed the query
+    // 1. Vector Search
     final queryEmbedding = await EmbeddingService.embed(query);
-
-    // Get all indexed chunks
     var allChunks = ObjectBoxStore.getAllChunksWithEmbeddings();
 
-    // Optional document filter
+    // Optional document/notebook filter
     if (documentIds != null && documentIds.isNotEmpty) {
       allChunks = allChunks
           .where((c) => documentIds.contains(c.documentId))
+          .toList();
+    } else if (notebookId != null) {
+      // Filter chunks from documents in this notebook
+      final notebookDocs = ObjectBoxStore.getAllDocuments()
+          .where((d) => _isDocumentInNotebook(d.documentId, notebookId))
+          .map((d) => d.documentId)
+          .toList();
+      allChunks = allChunks
+          .where((c) => notebookDocs.contains(c.documentId))
           .toList();
     }
 
     if (allChunks.isEmpty) return [];
 
-    // Score by cosine similarity
-    final scoredChunks = <_ScoredChunk>[];
+    // Score by cosine similarity (Vector Score)
+    final vectorResults = <_ScoredChunk>[];
     for (final chunk in allChunks) {
       final embedding = chunk.embeddingFloats;
       if (embedding == null || embedding.isEmpty) continue;
       final similarity =
           EmbeddingService.cosineSimilarity(queryEmbedding, embedding);
       if (similarity >= threshold) {
-        scoredChunks.add(_ScoredChunk(chunk, similarity));
+        vectorResults.add(_ScoredChunk(chunk, similarity));
       }
     }
 
+    // 2. Keyword Search (BM25-lite)
+    final keywordResults = _keywordSearch(query, allChunks);
+
+    // 3. Hybrid Reranking (Reciprocal Rank Fusion - simplified)
+    final fusedChunks = _reciprocalRankFusion(vectorResults, keywordResults);
+
     // Sort descending and take top-k
-    scoredChunks.sort((a, b) => b.score.compareTo(a.score));
-    final topChunks = scoredChunks.take(limit).toList();
+    fusedChunks.sort((a, b) => b.score.compareTo(a.score));
+    final topChunks = fusedChunks.take(limit).toList();
 
     return topChunks
         .map((sc) => DocumentChunk(
@@ -97,6 +111,54 @@ class RAGOrchestrator {
               createdAt: DateTime.parse(sc.chunk.createdAt),
             ))
         .toList();
+  }
+
+  static bool _isDocumentInNotebook(String documentId, String notebookId) {
+    // For now, we assume documentId is mapped to notebookId somewhere
+    // TODO: Add notebook mapping to ObjectBoxDocument or a separate mapping entity
+    return true;
+  }
+
+  static List<_ScoredChunk> _keywordSearch(String query, List<ObjectBoxChunk> chunks) {
+    final results = <_ScoredChunk>[];
+    final queryTerms = query.toLowerCase().split(RegExp(r'\s+')).where((t) => t.length > 2).toList();
+
+    if (queryTerms.isEmpty) return [];
+
+    for (final chunk in chunks) {
+      final content = chunk.content.toLowerCase();
+      double score = 0;
+      for (final term in queryTerms) {
+        if (content.contains(term)) {
+          score += 1.0;
+        }
+      }
+      if (score > 0) {
+        // Normalize score by term count
+        results.add(_ScoredChunk(chunk, score / queryTerms.length));
+      }
+    }
+    return results;
+  }
+
+  static List<_ScoredChunk> _reciprocalRankFusion(
+      List<_ScoredChunk> vector, List<_ScoredChunk> keyword) {
+    final Map<int, _ScoredChunk> map = {};
+
+    // Weight Vector search higher (0.7 vs 0.3)
+    for (final sc in vector) {
+      map[sc.chunk.id] = _ScoredChunk(sc.chunk, sc.score * 0.7);
+    }
+
+    for (final sc in keyword) {
+      if (map.containsKey(sc.chunk.id)) {
+        map[sc.chunk.id] = _ScoredChunk(sc.chunk, map[sc.chunk.id]!.score + (sc.score * 0.3));
+      } else {
+        map[sc.chunk.id] = _ScoredChunk(sc.chunk, sc.score * 0.3);
+      }
+    }
+
+    return map.values.toList();
   }
 
   // ── Generation ────────────────────────────────────────────────────────────

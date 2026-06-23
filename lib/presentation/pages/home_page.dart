@@ -1,18 +1,10 @@
-import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
-
 import '../../core/constants/app_constants.dart';
-import '../bloc/document/document_bloc.dart';
-import '../widgets/document_card.dart';
-import '../widgets/empty_state.dart';
-import '../widgets/loading_indicator.dart';
+import '../../data/models/objectbox_note.dart';
+import '../../data/models/objectbox_notebook.dart';
+import '../../data/objectbox_store.dart';
 import 'chat_page.dart';
-import 'image_capture_page.dart';
+import 'note_editor_page.dart';
 import 'settings_page.dart';
 import 'summarize_page.dart';
 
@@ -23,419 +15,177 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
+class _HomePageState extends State<HomePage> {
+  List<ObjectBoxNote> _notes = [];
+  List<ObjectBoxNotebook> _notebooks = [];
+  bool _isLoading = true;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    context.read<DocumentBloc>().add(const LoadDocuments());
+    _loadData();
   }
 
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    final notes = ObjectBoxStore.getAllNotes();
+    final notebooks = ObjectBoxStore.getAllNotebooks();
+    setState(() {
+      _notes = notes;
+      _notebooks = notebooks;
+      _isLoading = false;
+    });
   }
-
-  // ── Source picker bottom sheet ────────────────────────────────────────────
-
-  Future<void> _pickDocument() async {
-    final source = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => _AddDocumentSheet(),
-    );
-
-    if (source == null || !mounted) return;
-
-    switch (source) {
-      case 'files':
-        await _pickFile();
-      case 'camera':
-        if (mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const ImageCapturePage()),
-          );
-        }
-      case 'gallery':
-        await _pickFromGallery();
-      case 'video':
-        await _pickVideo();
-    }
-  }
-
-  // ── File picker (documents + all supported types) ─────────────────────────
-
-  Future<void> _pickFile() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: AppConstants.supportedExtensions,
-        allowMultiple: false,
-        withData: false,
-        withReadStream: false,
-      );
-
-      if (result == null || result.files.isEmpty) return;
-      final path = result.files.single.path;
-      if (path == null) return;
-
-      if (mounted) {
-        context.read<DocumentBloc>().add(AddDocument(File(path)));
-      }
-    } catch (e) {
-      if (mounted) {
-        _showError('Could not open file picker: ${e.toString().split('\n').first}');
-      }
-    }
-  }
-
-  // ── Gallery photo picker ──────────────────────────────────────────────────
-
-  Future<void> _pickFromGallery() async {
-    // Android 13+ uses READ_MEDIA_IMAGES; older uses READ_EXTERNAL_STORAGE
-    if (Platform.isAndroid) {
-      final sdk = await _getAndroidSdk();
-      if (sdk >= 33) {
-        final status = await Permission.photos.request();
-        if (!status.isGranted && mounted) {
-          _showPermissionDenied('Photos');
-          return;
-        }
-      }
-      // Below 33: file_picker / image_picker handles it internally
-    }
-
-    try {
-      final picker = ImagePicker();
-      final photo = await picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 2048,
-        maxHeight: 2048,
-        imageQuality: 92,
-      );
-      if (photo == null) return;
-
-      if (mounted) {
-        context.read<DocumentBloc>().add(AddDocument(File(photo.path)));
-      }
-    } catch (e) {
-      if (mounted) _showError('Could not open gallery: ${e.toString().split('\n').first}');
-    }
-  }
-
-  // ── Video picker ─────────────────────────────────────────────────────────
-
-  Future<void> _pickVideo() async {
-    if (Platform.isAndroid) {
-      final sdk = await _getAndroidSdk();
-      if (sdk >= 33) {
-        final status = await Permission.videos.request();
-        if (!status.isGranted && mounted) {
-          _showPermissionDenied('Videos');
-          return;
-        }
-      }
-    }
-
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.video,
-        allowMultiple: false,
-        withData: false,
-      );
-      if (result == null || result.files.isEmpty) return;
-      final path = result.files.single.path;
-      if (path == null) return;
-
-      if (mounted) {
-        context.read<DocumentBloc>().add(AddDocument(File(path)));
-      }
-    } catch (e) {
-      if (mounted) _showError('Could not open video picker: ${e.toString().split('\n').first}');
-    }
-  }
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-
-  void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        action: const SnackBarAction(label: 'Settings', onPressed: openAppSettings),
-      ),
-    );
-  }
-
-  void _showPermissionDenied(String type) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$type permission is required.'),
-        action: const SnackBarAction(label: 'Open Settings', onPressed: openAppSettings),
-      ),
-    );
-  }
-
-  /// Best-effort way to detect Android API level from the OS version string.
-  Future<int> _getAndroidSdk() async {
-    try {
-      final version = Platform.operatingSystemVersion;
-      // The OS version string on Android looks like "Linux 5.x.x ..."
-      // We can't get exact SDK from Dart directly without a plugin,
-      // so we assume 33+ if it's not obviously old. Return safe default.
-      if (version.contains('Android')) return 33;
-      return 33; // assume modern
-    } catch (_) {
-      return 33;
-    }
-  }
-
-  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          children: [
-            Text(
-              AppConstants.appName,
-              style: textTheme.titleLarge?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Text(
-              AppConstants.appTagline,
-              style: textTheme.bodySmall?.copyWith(
-                color: Colors.white.withAlpha(180),
-              ),
-            ),
-          ],
-        ),
-        centerTitle: true,
+        title: const Text(AppConstants.appName),
         actions: [
           IconButton(
-            icon: const Icon(Icons.auto_awesome),
-            tooltip: 'Summarize',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SummarizePage()),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.chat_bubble_outline),
-            tooltip: 'AI Chat',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ChatPage()),
-            ),
-          ),
-          IconButton(
             icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Settings',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SettingsPage()),
-            ).then((_) {
-              if (mounted) {
-                context.read<DocumentBloc>().add(const LoadDocuments());
-              }
-            }),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage())).then((_) => _loadData()),
           ),
         ],
       ),
-      body: BlocConsumer<DocumentBloc, DocumentState>(
-        listener: (context, state) {
-          if (state is DocumentError) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(state.message),
-                backgroundColor: colorScheme.error,
-              ),
-            );
-          } else if (state is DocumentProcessed) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('✓ "${state.document.name}" processed and indexed'),
-                backgroundColor: Colors.green.shade600,
-                duration: const Duration(seconds: 3),
-              ),
-            );
-          }
-        },
-        builder: (context, state) {
-          if (state is DocumentLoading) {
-            return const LoadingIndicator(message: 'Loading documents...');
-          }
-
-          if (state is DocumentProcessing) {
-            return LoadingIndicator(
-              message: state.message,
-              documentName: state.document.name,
-            );
-          }
-
-          final docs = state is DocumentsLoaded ? state.documents : <dynamic>[];
-
-          if (docs.isEmpty) {
-            return EmptyState(onAddDocument: _pickDocument);
-          }
-
-          return RefreshIndicator(
-            onRefresh: () async {
-              context.read<DocumentBloc>().add(const LoadDocuments());
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: GridView.builder(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  childAspectRatio: 0.78,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                ),
-                itemCount: docs.length,
-                itemBuilder: (context, index) {
-                  final doc = docs[index];
-                  return DocumentCard(
-                    document: doc,
-                    onDelete: () {
-                      context.read<DocumentBloc>().add(DeleteDocument(doc.id));
-                    },
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatPage(initialDocumentId: doc.id),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'add_doc_fab',
-        onPressed: _pickDocument,
-        icon: const Icon(Icons.add),
-        label: const Text('Add Document'),
-      ),
-    );
-  }
-}
-
-// ── Add Document bottom sheet widget ────────────────────────────────────────
-
-class _AddDocumentSheet extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      drawer: Drawer(
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            // Drag handle
-            Container(
-              width: 36,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: colorScheme.outlineVariant,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-
-            Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Add Document',
-                  style: Theme.of(context).textTheme.titleLarge,
+             DrawerHeader(
+              decoration: BoxDecoration(color: colorScheme.primaryContainer),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.auto_stories, size: 48),
+                    const SizedBox(height: 8),
+                    Text(AppConstants.appName, style: Theme.of(context).textTheme.titleLarge),
+                  ],
                 ),
               ),
             ),
-
-            const _SheetTile(
-              icon: Icons.folder_open_rounded,
-              iconColor: Color(0xFF4F46E5),
-              title: 'Browse Files',
-              subtitle: 'PDF, TXT and more',
-              value: 'files',
+            ListTile(
+              leading: const Icon(Icons.chat_bubble_outline),
+              title: const Text('AI Chat'),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatPage())),
             ),
-            const _SheetTile(
-              icon: Icons.camera_alt_rounded,
-              iconColor: Color(0xFF059669),
-              title: 'Take Photo',
-              subtitle: 'Capture & extract text via OCR',
-              value: 'camera',
+             ListTile(
+              leading: const Icon(Icons.summarize_outlined),
+              title: const Text('Summarize'),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SummarizePage())),
             ),
-            const _SheetTile(
-              icon: Icons.photo_library_rounded,
-              iconColor: Color(0xFF0284C7),
-              title: 'Choose Photo',
-              subtitle: 'Pick image from gallery',
-              value: 'gallery',
+            const Divider(),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text('NOTEBOOKS', style: Theme.of(context).textTheme.labelSmall),
             ),
-            const _SheetTile(
-              icon: Icons.video_library_rounded,
-              iconColor: Color(0xFFDB2777),
-              title: 'Choose Video',
-              subtitle: 'MP4, MOV, AVI and more',
-              value: 'video',
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  ..._notebooks.map((n) => ListTile(
+                    leading: const Icon(Icons.folder_outlined),
+                    title: Text(n.name),
+                    onTap: () {
+                       // TODO: Implement Notebook Detail View
+                    },
+                  )),
+                  ListTile(
+                    leading: const Icon(Icons.add),
+                    title: const Text('Create Notebook'),
+                    onTap: () {
+                      // TODO: Implement Create Notebook Dialog
+                    },
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
           ],
         ),
       ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _notes.isEmpty
+              ? _buildEmptyState()
+              : _buildNotesGrid(),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const NoteEditorPage()),
+        ).then((_) => _loadData()),
+        child: const Icon(Icons.add),
+      ),
     );
   }
-}
 
-class _SheetTile extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String title;
-  final String subtitle;
-  final String value;
-
-  const _SheetTile({
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    required this.subtitle,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      leading: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: iconColor.withAlpha(25),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Icon(icon, color: iconColor, size: 22),
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.note_alt_outlined, size: 64, color: Colors.grey.withAlpha(100)),
+          const SizedBox(height: 16),
+          const Text('No notes yet', style: TextStyle(color: Colors.grey, fontSize: 18)),
+          const SizedBox(height: 8),
+          const Text('Start by creating a new note or notebook'),
+        ],
       ),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      onTap: () => Navigator.pop(context, value),
+    );
+  }
+
+  Widget _buildNotesGrid() {
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+        childAspectRatio: 0.8,
+      ),
+      itemCount: _notes.length,
+      itemBuilder: (context, index) {
+        final note = _notes[index];
+        return Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            side: BorderSide(color: Colors.grey.withAlpha(50)),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => NoteEditorPage(noteId: note.noteId)),
+            ).then((_) => _loadData()),
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    note.title,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: Text(
+                      note.content,
+                      style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                      maxLines: 6,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
