@@ -2,8 +2,6 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
-import 'package:objectbox/objectbox.dart' as obx;
-
 import '../objectbox.g.dart';
 import 'models/objectbox_chat_message.dart';
 import 'models/objectbox_chunk.dart';

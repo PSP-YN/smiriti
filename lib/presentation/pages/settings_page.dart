@@ -171,6 +171,71 @@ class _SettingsPageState extends State<SettingsPage> {
     _snack(enabled ? 'App lock enabled' : 'App lock disabled');
   }
 
+  Future<void> _showPinDialog() async {
+    final oldPinController = TextEditingController();
+    final newPinController = TextEditingController();
+    final confirmPinController = TextEditingController();
+
+    final hasPin = await SecureStorageService.hasAppPin();
+    final save = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(hasPin ? 'Change PIN' : 'Set PIN'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (hasPin)
+              TextField(
+                controller: oldPinController,
+                decoration: const InputDecoration(labelText: 'Current PIN', border: OutlineInputBorder()),
+                obscureText: true,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+              ),
+            if (hasPin) const SizedBox(height: 8),
+            TextField(
+              controller: newPinController,
+              decoration: const InputDecoration(labelText: 'New PIN', border: OutlineInputBorder()),
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: confirmPinController,
+              decoration: const InputDecoration(labelText: 'Confirm PIN', border: OutlineInputBorder()),
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+        ],
+      ),
+    );
+
+    if (save != true) return;
+
+    if (hasPin) {
+      final valid = await SecureStorageService.verifyAppPin(oldPinController.text);
+      if (!valid) { _snack('Current PIN is incorrect'); return; }
+    }
+
+    if (newPinController.text.length < 4) { _snack('PIN must be at least 4 digits'); return; }
+    if (newPinController.text != confirmPinController.text) { _snack('PINs do not match'); return; }
+
+    if (newPinController.text.isEmpty) {
+      await SecureStorageService.removeAppPin();
+      _snack('PIN removed');
+    } else {
+      await SecureStorageService.setAppPin(newPinController.text);
+      _snack('PIN saved');
+    }
+  }
+
   Future<void> _clearAllData() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -256,24 +321,42 @@ class _SettingsPageState extends State<SettingsPage> {
                     leading: const Icon(Icons.dark_mode),
                     title: const Text('Theme'),
                     subtitle: Text(_themeMode == ThemeMode.system ? 'Follow system' : _themeMode == ThemeMode.light ? 'Light' : 'Dark'),
-                    trailing: SegmentedButton<ThemeMode>(
-                      segments: const [
-                        ButtonSegment(value: ThemeMode.system, label: Text('Auto'), icon: Icon(Icons.brightness_auto, size: 16)),
-                        ButtonSegment(value: ThemeMode.light, label: Text('Light'), icon: Icon(Icons.light_mode, size: 16)),
-                        ButtonSegment(value: ThemeMode.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode, size: 16)),
+                    trailing: ToggleButtons(
+                      isSelected: [
+                        _themeMode == ThemeMode.system,
+                        _themeMode == ThemeMode.light,
+                        _themeMode == ThemeMode.dark,
                       ],
-                      selected: {_themeMode},
-                      onSelectionChanged: (v) => _setThemeMode(v.first),
+                      onPressed: (i) {
+                        final modes = [ThemeMode.system, ThemeMode.light, ThemeMode.dark];
+                        _setThemeMode(modes[i]);
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
+                      children: const [
+                        Icon(Icons.brightness_auto, size: 18),
+                        Icon(Icons.light_mode, size: 18),
+                        Icon(Icons.dark_mode, size: 18),
+                      ],
                     ),
                   ),
 
                   _sectionHeader('Security'),
                   SwitchListTile(
                     secondary: const Icon(Icons.fingerprint),
-                    title: const Text('App Lock'),
-                    subtitle: const Text('Require biometric authentication on start'),
+                    title: const Text('Biometric Lock'),
+                    subtitle: const Text('Require fingerprint/face to unlock'),
                     value: _appLockEnabled,
                     onChanged: _toggleAppLock,
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.pin_outlined),
+                    title: const Text('PIN Lock'),
+                    subtitle: const Text('Set or change app PIN'),
+                    trailing: TextButton(
+                      onPressed: _showPinDialog,
+                      child: const Text('Set PIN'),
+                    ),
                   ),
 
                   _sectionHeader('AI Provider'),

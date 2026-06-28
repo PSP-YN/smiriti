@@ -1,10 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 
 import '../../core/services/ocr_service.dart';
+import '../../data/datasources/document_local_datasource.dart';
 import '../../data/models/objectbox_document.dart';
 import '../../data/models/objectbox_note.dart';
 import '../../data/objectbox_store.dart';
@@ -18,26 +20,58 @@ class ImageCapturePage extends StatefulWidget {
 
 class _ImageCapturePageState extends State<ImageCapturePage> {
   final _picker = ImagePicker();
-  final List<XFile> _selectedFiles = [];
+  final List<PlatformFile> _selectedFiles = [];
   bool _isProcessing = false;
   String _processingStatus = '';
 
-  Future<void> _pickFiles() async {
+  Future<void> _pickImages() async {
     final files = await _picker.pickMultiImage();
     if (files.isNotEmpty) {
-      setState(() => _selectedFiles.addAll(files));
+      setState(() {
+        _selectedFiles.addAll(files.map((f) => PlatformFile(
+          name: f.name,
+          path: f.path,
+          size: 0,
+        )));
+      });
     }
   }
 
   Future<void> _takePhoto() async {
     final file = await _picker.pickImage(source: ImageSource.camera);
     if (file != null) {
-      setState(() => _selectedFiles.add(file));
+      setState(() {
+        _selectedFiles.add(PlatformFile(
+          name: file.name,
+          path: file.path,
+          size: 0,
+        ));
+      });
+    }
+  }
+
+  Future<void> _pickDocuments() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'txt', 'md', 'doc', 'docx'],
+      allowMultiple: true,
+    );
+    if (result != null && result.files.isNotEmpty) {
+      setState(() => _selectedFiles.addAll(result.files));
     }
   }
 
   void _removeFile(int index) {
     setState(() => _selectedFiles.removeAt(index));
+  }
+
+  String _fileIcon(PlatformFile file) {
+    final ext = p.extension(file.name).toLowerCase();
+    if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].contains(ext)) return 'image';
+    if (ext == '.pdf') return 'pdf';
+    if (['.txt', '.md'].contains(ext)) return 'text';
+    if (['.doc', '.docx'].contains(ext)) return 'doc';
+    return 'file';
   }
 
   Future<void> _processFiles() async {
@@ -49,6 +83,7 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
     });
 
     var processed = 0;
+    final datasource = DocumentLocalDataSourceImpl();
 
     for (final file in _selectedFiles) {
       setState(() {
@@ -56,24 +91,36 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
       });
 
       try {
-                final result = await OCRService.processImage(file.path);
-                final text = result.text;
+        final filePath = file.path;
+        if (filePath == null) continue;
 
-        final docDir = Directory(p.dirname(file.path));
-        final storedPath = '${docDir.path}/documents/${p.basename(file.path)}';
-        await File(file.path).copy(storedPath);
+        final ext = p.extension(filePath).toLowerCase();
+        String text;
+
+        if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].contains(ext)) {
+          final result = await OCRService.processImage(filePath);
+          text = result.text;
+        } else if (ext == '.pdf') {
+          final extracted = await datasource.saveDocument(File(filePath));
+          text = extracted.extractedText.join('\n');
+        } else {
+          text = await File(filePath).readAsString();
+        }
+
+        final docDir = Directory(p.dirname(filePath));
+        final storedPath = '${docDir.path}/documents/${p.basename(filePath)}';
+        await File(filePath).copy(storedPath);
 
         ObjectBoxStore.insertDocument(ObjectBoxDocument(
           documentId: DateTime.now().millisecondsSinceEpoch.toString(),
-          name: p.basename(file.path),
+          name: p.basename(filePath),
           path: storedPath,
-          type: p.extension(file.path).replaceAll('.', ''),
+          type: ext.replaceAll('.', ''),
           createdAt: DateTime.now().toIso8601String(),
         ));
 
-        // Auto-create a note from OCR text
         if (text.trim().isNotEmpty) {
-          final title = p.basenameWithoutExtension(file.path);
+          final title = p.basenameWithoutExtension(filePath);
           ObjectBoxStore.insertNote(ObjectBoxNote(
             noteId: DateTime.now().millisecondsSinceEpoch.toString() + '_$processed',
             title: title.length > 100 ? '${title.substring(0, 100)}...' : title,
@@ -87,7 +134,7 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error processing ${p.basename(file.path)}: $e')),
+            SnackBar(content: Text('Error processing ${file.name}: $e')),
           );
         }
       }
@@ -100,7 +147,7 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Processed $processed of ${_selectedFiles.length} files')),
+        SnackBar(content: Text('Processed $processed files')),
       );
       Navigator.pop(context);
     }
@@ -135,20 +182,26 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.image_outlined, size: 64, color: Colors.grey),
+                      const Icon(Icons.upload_file, size: 64, color: Colors.grey),
                       const SizedBox(height: 16),
-                      const Text('Select images or take a photo', style: TextStyle(color: Colors.grey)),
+                      const Text('Import images, PDFs, or documents', style: TextStyle(color: Colors.grey)),
                       const SizedBox(height: 24),
                       FilledButton.icon(
-                        onPressed: _pickFiles,
+                        onPressed: _pickImages,
                         icon: const Icon(Icons.photo_library),
-                        label: const Text('Choose from Gallery'),
+                        label: const Text('Images from Gallery'),
                       ),
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
                         onPressed: _takePhoto,
                         icon: const Icon(Icons.camera_alt),
                         label: const Text('Take Photo'),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _pickDocuments,
+                        icon: const Icon(Icons.description),
+                        label: const Text('PDF / Documents'),
                       ),
                     ],
                   ),
@@ -158,20 +211,14 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
                   itemCount: _selectedFiles.length,
                   itemBuilder: (_, i) {
                     final file = _selectedFiles[i];
+                    final iconType = _fileIcon(file);
                     return Card(
                       child: ListTile(
-                        leading: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: Image.file(
-                            File(file.path),
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(Icons.image),
-                          ),
+                        leading: Icon(
+                          iconType == 'image' ? Icons.image : iconType == 'pdf' ? Icons.picture_as_pdf : Icons.description,
+                          size: 32,
                         ),
-                        title: Text(p.basename(file.path), maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text('${(File(file.path).lengthSync() / 1024).toStringAsFixed(0)} KB'),
+                        title: Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis),
                         trailing: IconButton(
                           icon: const Icon(Icons.close),
                           onPressed: () => _removeFile(i),
@@ -182,7 +229,7 @@ class _ImageCapturePageState extends State<ImageCapturePage> {
                 ),
       floatingActionButton: _selectedFiles.isNotEmpty && !_isProcessing
           ? FloatingActionButton.extended(
-              onPressed: _pickFiles,
+              onPressed: _pickImages,
               icon: const Icon(Icons.add),
               label: const Text('Add More'),
             )

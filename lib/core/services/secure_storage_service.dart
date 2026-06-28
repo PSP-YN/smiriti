@@ -27,6 +27,7 @@ class SecureStorageService {
   static const _googleKeyKey = 'smriti_google_key';
   static const _activeProviderKey = 'smriti_active_provider';
   static const _appLockEnabledKey = 'smriti_app_lock';
+  static const _appPinKey = 'smriti_app_pin';
 
   static Future<void> initialize() async {
     final existing = await _storage.read(key: _encryptionKeyKey);
@@ -97,6 +98,51 @@ class SecureStorageService {
     } catch (_) {
       return false;
     }
+  }
+
+  static Future<void> setAppPin(String pin) async {
+    final bytes = _secureRandomBytes(32);
+    final key = base64Encode(bytes);
+    final iv = _secureRandomBytes(16);
+    final encrypted = _encryptPin(pin, key, iv);
+    await _storage.write(key: _appPinKey, value: '$key:${base64Encode(iv)}:$encrypted');
+  }
+
+  static Future<bool> verifyAppPin(String pin) async {
+    final stored = await _storage.read(key: _appPinKey);
+    if (stored == null) return false;
+    final parts = stored.split(':');
+    if (parts.length != 3) return false;
+    final decrypted = _decryptPin(parts[2], parts[0], base64Decode(parts[1]));
+    return decrypted == pin;
+  }
+
+  static Future<bool> hasAppPin() async {
+    final val = await _storage.read(key: _appPinKey);
+    return val != null;
+  }
+
+  static Future<void> removeAppPin() async {
+    await _storage.delete(key: _appPinKey);
+  }
+
+  static String _encryptPin(String pin, String keyB64, List<int> iv) {
+    final key = base64Decode(keyB64);
+    final encrypted = <int>[];
+    for (var i = 0; i < pin.codeUnits.length; i++) {
+      encrypted.add(pin.codeUnits[i] ^ key[i % key.length] ^ iv[i % iv.length]);
+    }
+    return base64Encode(encrypted);
+  }
+
+  static String _decryptPin(String encryptedB64, String keyB64, List<int> iv) {
+    final key = base64Decode(keyB64);
+    final encrypted = base64Decode(encryptedB64);
+    final decrypted = <int>[];
+    for (var i = 0; i < encrypted.length; i++) {
+      decrypted.add(encrypted[i] ^ key[i % key.length] ^ iv[i % iv.length]);
+    }
+    return String.fromCharCodes(decrypted);
   }
 
   static Future<void> write(String key, String value) =>

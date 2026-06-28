@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
-import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/services/audio_transcription_service.dart';
@@ -144,14 +143,21 @@ class DocumentLocalDataSourceImpl implements DocumentLocalDataSource {
   Future<List<String>> _extractPdf(String path) async {
     try {
       final bytes = await File(path).readAsBytes();
-      final doc = PdfDocument(inputBytes: bytes);
-      final extractor = PdfTextExtractor(doc);
+      final content = String.fromCharCodes(bytes);
       final pages = <String>[];
-      for (var i = 0; i < doc.pages.count; i++) {
-        final text = extractor.extractText(startPageIndex: i, endPageIndex: i);
-        if (text.trim().isNotEmpty) pages.add(text);
+      final pageMatches = RegExp(r'\((.*?)\)\s*Tj', dotAll: true).allMatches(content);
+      final buffer = StringBuffer();
+      for (final m in pageMatches) {
+        final text = m.group(1)!.trim();
+        if (text.isNotEmpty) {
+          buffer.write('$text ');
+        }
       }
-      doc.dispose();
+      if (buffer.isNotEmpty) {
+        pages.add(buffer.toString().trim());
+      } else {
+        pages.add('[PDF - text extraction limited]');
+      }
       return pages;
     } catch (e) {
       return ['[PDF extraction error: $e]'];

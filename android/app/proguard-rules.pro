@@ -32,15 +32,15 @@
 -keep class org.tensorflow.** { *; }
 -dontwarn org.tensorflow.**
 
+# Play Core (deferred loading - may not be present)
+-dontwarn com.google.android.play.core.**
+-keep class com.google.android.play.core.** { *; }
+
 # HTTP / networking
 -keep class okhttp3.** { *; }
 -dontwarn okhttp3.**
 -keep class okio.** { *; }
 -dontwarn okio.**
-
-# Syncfusion PDF
--keep class com.syncfusion.** { *; }
--dontwarn com.syncfusion.**
 
 # General Android
 -keep class androidx.** { *; }

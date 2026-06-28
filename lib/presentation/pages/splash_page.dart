@@ -31,9 +31,13 @@ class _SplashPageState extends State<SplashPage> {
     _initializeApp();
   }
 
+  bool _needsPinAuth = false;
+  final _pinController = TextEditingController();
+
   @override
   void dispose() {
     _progressSub?.cancel();
+    _pinController.dispose();
     super.dispose();
   }
 
@@ -61,12 +65,36 @@ class _SplashPageState extends State<SplashPage> {
     }
 
     final appLockEnabled = await SecureStorageService.isAppLockEnabled();
-    if (appLockEnabled) {
-      if (mounted) setState(() => _needsAuth = true);
-      await _runBiometricAuth();
+    final hasPin = await SecureStorageService.hasAppPin();
+
+    if (appLockEnabled && mounted) {
+      setState(() => _needsAuth = true);
+      final authed = await SecureStorageService.authenticateWithBiometrics(
+        reason: 'Authenticate to unlock Smriti',
+      );
+      if (authed && mounted) { _navigateHome(); return; }
+      if (hasPin && mounted) {
+        setState(() => _needsPinAuth = true);
+        return;
+      }
+      if (!hasPin && mounted) await _runBiometricAuth();
+    } else if (hasPin && mounted) {
+      setState(() => _needsPinAuth = true);
     } else {
       _navigateHome();
     }
+  }
+
+  void _verifyPin() {
+    SecureStorageService.verifyAppPin(_pinController.text).then((valid) {
+      if (valid && mounted) {
+        _navigateHome();
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Incorrect PIN')),
+        );
+      }
+    });
   }
 
   Future<void> _runBiometricAuth() async {
@@ -142,7 +170,29 @@ class _SplashPageState extends State<SplashPage> {
 
                 const SizedBox(height: 48),
 
-                if (_needsAuth) ...[
+                if (_needsPinAuth) ...[
+                  const Icon(Icons.pin, size: 64),
+                  const SizedBox(height: 16),
+                  const Text('Enter PIN to unlock'),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: 200,
+                    child: TextField(
+                      controller: _pinController,
+                      decoration: const InputDecoration(
+                        labelText: 'PIN',
+                        border: OutlineInputBorder(),
+                      ),
+                      obscureText: true,
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                      textAlign: TextAlign.center,
+                      onSubmitted: (_) => _verifyPin(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(onPressed: _verifyPin, child: const Text('Unlock')),
+                ] else if (_needsAuth) ...[
                   Icon(
                     Icons.fingerprint,
                     size: 64,
