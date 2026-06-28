@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/datasources/document_local_datasource.dart';
 import '../../data/repositories/document_repository_impl.dart';
 import '../../domain/repositories/document_repository.dart';
+import '../../presentation/bloc/chat/chat_bloc.dart';
 import '../../presentation/bloc/document/document_bloc.dart';
 
 final GetIt getIt = GetIt.instance;
@@ -15,7 +16,7 @@ Future<void> configureDependencies() async {
 
   // Data sources
   getIt.registerLazySingleton<DocumentLocalDataSource>(
-    () => DocumentLocalDataSourceImpl(prefs),
+    () => DocumentLocalDataSourceImpl(),
   );
 
   // Repositories
@@ -26,5 +27,9 @@ Future<void> configureDependencies() async {
   // BLoCs
   getIt.registerFactory<DocumentBloc>(
     () => DocumentBloc(getIt()),
+  );
+
+  getIt.registerFactory<ChatBloc>(
+    () => ChatBloc(),
   );
 }

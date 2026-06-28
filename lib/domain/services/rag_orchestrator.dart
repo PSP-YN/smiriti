@@ -8,8 +8,6 @@ import '../../data/objectbox_store.dart';
 import '../entities/document.dart';
 import '../entities/document_chunk.dart';
 
-// ── Result types ─────────────────────────────────────────────────────────────
-
 class RAGResult {
   final String answer;
   final List<Citation> citations;
@@ -38,16 +36,11 @@ class Citation {
   });
 }
 
-// ── RAG Orchestrator ─────────────────────────────────────────────────────────
-
 class RAGOrchestrator {
   RAGOrchestrator._();
 
   static const int _maxChunks = AppConstants.maxRetrievedChunks;
-  // Lower threshold → more recall; chunks ranked by score anyway
   static const double _relevanceThreshold = 0.45;
-
-  // ── Retrieval ─────────────────────────────────────────────────────────────
 
   static Future<List<DocumentChunk>> retrieveRelevantChunks(
     String query, {
@@ -56,29 +49,25 @@ class RAGOrchestrator {
     List<String>? documentIds,
     String? notebookId,
   }) async {
-    // 1. Vector Search
     final queryEmbedding = await EmbeddingService.embed(query);
     var allChunks = ObjectBoxStore.getAllChunksWithEmbeddings();
 
-    // Optional document/notebook filter
     if (documentIds != null && documentIds.isNotEmpty) {
       allChunks = allChunks
           .where((c) => documentIds.contains(c.documentId))
           .toList();
     } else if (notebookId != null) {
-      // Filter chunks from documents in this notebook
-      final notebookDocs = ObjectBoxStore.getAllDocuments()
-          .where((d) => _isDocumentInNotebook(d.documentId, notebookId))
+      final notebookDocIds = ObjectBoxStore.getAllDocuments()
+          .where((d) => d.notebookId == notebookId)
           .map((d) => d.documentId)
           .toList();
       allChunks = allChunks
-          .where((c) => notebookDocs.contains(c.documentId))
+          .where((c) => notebookDocIds.contains(c.documentId))
           .toList();
     }
 
     if (allChunks.isEmpty) return [];
 
-    // Score by cosine similarity (Vector Score)
     final vectorResults = <_ScoredChunk>[];
     for (final chunk in allChunks) {
       final embedding = chunk.embeddingFloats;
@@ -90,13 +79,10 @@ class RAGOrchestrator {
       }
     }
 
-    // 2. Keyword Search (BM25-lite)
     final keywordResults = _keywordSearch(query, allChunks);
 
-    // 3. Hybrid Reranking (Reciprocal Rank Fusion - simplified)
     final fusedChunks = _reciprocalRankFusion(vectorResults, keywordResults);
 
-    // Sort descending and take top-k
     fusedChunks.sort((a, b) => b.score.compareTo(a.score));
     final topChunks = fusedChunks.take(limit).toList();
 
@@ -111,12 +97,6 @@ class RAGOrchestrator {
               createdAt: DateTime.parse(sc.chunk.createdAt),
             ))
         .toList();
-  }
-
-  static bool _isDocumentInNotebook(String documentId, String notebookId) {
-    // For now, we assume documentId is mapped to notebookId somewhere
-    // TODO: Add notebook mapping to ObjectBoxDocument or a separate mapping entity
-    return true;
   }
 
   static List<_ScoredChunk> _keywordSearch(String query, List<ObjectBoxChunk> chunks) {
@@ -134,7 +114,6 @@ class RAGOrchestrator {
         }
       }
       if (score > 0) {
-        // Normalize score by term count
         results.add(_ScoredChunk(chunk, score / queryTerms.length));
       }
     }
@@ -145,7 +124,6 @@ class RAGOrchestrator {
       List<_ScoredChunk> vector, List<_ScoredChunk> keyword) {
     final Map<int, _ScoredChunk> map = {};
 
-    // Weight Vector search higher (0.7 vs 0.3)
     for (final sc in vector) {
       map[sc.chunk.id] = _ScoredChunk(sc.chunk, sc.score * 0.7);
     }
@@ -160,8 +138,6 @@ class RAGOrchestrator {
 
     return map.values.toList();
   }
-
-  // ── Generation ────────────────────────────────────────────────────────────
 
   static Future<RAGResult> generateAnswer(
     String query, {
@@ -181,7 +157,6 @@ class RAGOrchestrator {
       );
     }
 
-    // Build citations and full-text context
     final citations = <Citation>[];
     final contextBuf = StringBuffer();
 
@@ -207,7 +182,6 @@ class RAGOrchestrator {
       ));
     }
 
-    // Check if LLM is available
     final activeModel = await ModelManager.getActiveModel();
     final isDownloaded =
         activeModel != null && await ModelManager.isModelDownloaded(activeModel.id);
@@ -224,7 +198,6 @@ class RAGOrchestrator {
       }
     }
 
-    // Build context chunks map for LLM
     final contextChunks = citations
         .map((c) => {
               'docName': c.documentName,
@@ -245,7 +218,6 @@ class RAGOrchestrator {
       return _placeholderAnswer(query, relevantChunks, citations);
     }
 
-    // Confidence = avg relevance × coverage ratio
     final avgScore =
         citations.map((c) => c.relevanceScore).reduce((a, b) => a + b) /
             citations.length;
@@ -255,15 +227,13 @@ class RAGOrchestrator {
     return RAGResult(answer: answer, citations: citations, confidence: confidence);
   }
 
-  // ── Fallback answer (no LLM) ──────────────────────────────────────────────
-
   static RAGResult _placeholderAnswer(
     String query,
     List<DocumentChunk> chunks,
     List<Citation> citations,
   ) {
     final buf = StringBuffer();
-    buf.writeln('📚 Here is what I found in your documents:\n');
+    buf.writeln('Here is what I found in your documents:\n');
 
     for (var i = 0; i < citations.length; i++) {
       final c = citations[i];
@@ -274,7 +244,7 @@ class RAGOrchestrator {
 
     buf.writeln('─────────────────────────────');
     buf.writeln(
-        'ℹ️  Download an LLM model in Settings → AI Models for AI-generated answers.');
+        'Download an LLM model in Settings → AI Models for AI-generated answers.');
 
     final avgScore = citations.isNotEmpty
         ? citations.map((c) => c.relevanceScore).reduce((a, b) => a + b) /
@@ -285,26 +255,24 @@ class RAGOrchestrator {
         answer: buf.toString(), citations: citations, confidence: avgScore);
   }
 
-  // ── Indexing ──────────────────────────────────────────────────────────────
-
   static Future<void> indexDocument(
       Document document, List<String> extractedText) async {
-    // Store document metadata
-    ObjectBoxStore.insertDocument(ObjectBoxDocument(
-      documentId: document.id,
-      name: document.name,
-      path: document.path,
-      type: document.type,
-      createdAt: document.createdAt.toIso8601String(),
-      pageCount: document.pageCount,
-      thumbnailPath: document.thumbnailPath,
-    ));
+    if (document.extractedText.isNotEmpty) {
+      ObjectBoxStore.insertDocument(ObjectBoxDocument(
+        documentId: document.id,
+        name: document.name,
+        path: document.path,
+        type: document.type,
+        createdAt: document.createdAt.toIso8601String(),
+        pageCount: document.pageCount,
+        thumbnailPath: document.thumbnailPath,
+        notebookId: null,
+      ));
+    }
 
-    // Create overlapping chunks
     final chunks = _createChunks(document.id, extractedText);
     if (chunks.isEmpty) return;
 
-    // Batch embed
     final texts = chunks.map((c) => c.content).toList();
     final embeddings = await EmbeddingService.embedBatch(texts);
 
@@ -355,14 +323,10 @@ class RAGOrchestrator {
     return chunks;
   }
 
-  // ── Deletion ──────────────────────────────────────────────────────────────
-
   static Future<void> deleteDocumentIndex(String documentId) async {
     ObjectBoxStore.deleteDocument(documentId);
   }
 }
-
-// ── Internal helper ───────────────────────────────────────────────────────────
 
 class _ScoredChunk {
   final ObjectBoxChunk chunk;

@@ -1,261 +1,139 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:get_it/get_it.dart';
 
-import '../../domain/entities/document.dart';
-import '../../domain/repositories/document_repository.dart';
+import '../../core/services/embedding_service.dart';
+import '../../core/services/llm_service.dart';
+import '../../domain/services/rag_orchestrator.dart';
+import '../../data/objectbox_store.dart';
 
 class SummarizePage extends StatefulWidget {
-  final String? documentId;
-
-  const SummarizePage({super.key, this.documentId});
+  const SummarizePage({super.key});
 
   @override
   State<SummarizePage> createState() => _SummarizePageState();
 }
 
 class _SummarizePageState extends State<SummarizePage> {
-  final _repository = GetIt.I<DocumentRepository>();
-  Document? _selectedDocument;
-  List<Document> _documents = [];
   String _summary = '';
   bool _isLoading = false;
-  String _summaryType = 'concise';
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _loadDocuments();
+    _summarize();
   }
 
-  Future<void> _loadDocuments() async {
-    final docs = await _repository.getAllDocuments();
-    if (mounted) {
-      setState(() {
-        _documents = docs;
-        if (widget.documentId != null) {
-          try {
-            _selectedDocument = docs.firstWhere((d) => d.id == widget.documentId);
-          } catch (_) {
-            _selectedDocument = docs.isNotEmpty ? docs.first : null;
-          }
-        } else {
-          _selectedDocument = docs.isNotEmpty ? docs.first : null;
-        }
-      });
-    }
-  }
-
-  Future<void> _generateSummary() async {
-    if (_selectedDocument == null) return;
-
+  Future<void> _summarize() async {
     setState(() {
       _isLoading = true;
+      _error = null;
       _summary = '';
     });
 
     try {
-      // Placeholder summaries until LLM integration is active.
-      // When an LLM model is downloaded, this path will be replaced
-      // by RAGOrchestrator.generateAnswer() with a summarization prompt.
-      await Future.delayed(const Duration(milliseconds: 800));
-
-      final name = _selectedDocument!.name;
-      final pages = _selectedDocument!.pageCount;
-
-      final summary = switch (_summaryType) {
-        'concise' => '''Summary of "$name"
-
-This $pages-page document has been indexed for search. Key topics from the document are available for AI-powered Q&A in the Chat tab.
-
-Key Points:
-• Document indexed and ready for queries
-• Use Chat to ask specific questions
-• Full AI summaries require an LLM model download
-
-(Download an AI model in Settings → AI Models for full summaries)''',
-        'detailed' => '''Detailed Summary of "$name"
-
-Document Information:
-• Pages: $pages
-• Type: ${_selectedDocument!.type.toUpperCase()}
-• Status: Indexed and searchable
-
-This document has been fully processed and chunked into semantic segments. All content is searchable via the Chat feature using natural language queries.
-
-To get a real AI-generated detailed summary, download a language model from Settings → AI Models, then return here.''',
-        'bullet_points' => '''Key Points from "$name":
-
-• $pages ${pages == 1 ? 'page' : 'pages'} of content, fully indexed
-• All text extracted and embedded for semantic search
-• Queryable from the Chat screen using natural language
-• Supports cross-document search when multiple docs are loaded
-
-To extract AI-powered bullet points, download an LLM from Settings → AI Models.''',
-        _ => 'Select a summary type above.',
-      };
-
-      if (mounted) {
+      final notes = ObjectBoxStore.getAllNotes();
+      if (notes.isEmpty) {
         setState(() {
-          _summary = summary;
           _isLoading = false;
+          _summary = 'No notes to summarize. Create some notes first.';
+        });
+        return;
+      }
+
+      final allText = notes.map((n) => '${n.title}: ${n.content}').join('\n\n');
+      final truncated = allText.length > 8000 ? '${allText.substring(0, 8000)}...' : allText;
+
+      final llmReady = LLMService.isInitialized;
+      final embeddingReady = EmbeddingService.isInitialized;
+
+      if (llmReady || embeddingReady) {
+        final result = await RAGOrchestrator.generateAnswer(
+          'Summarize the following notes concisively, highlighting the main points:\n\n$truncated',
+        );
+        setState(() {
+          _summary = result.answer;
+          _isLoading = false;
+        });
+      } else {
+        // Keyword-based fallback summary
+        final words = allText.split(RegExp(r'\s+'));
+        final wordFreq = <String, int>{};
+        for (final w in words) {
+          final clean = w.toLowerCase().replaceAll(RegExp(r'[^\w]'), '');
+          if (clean.length > 3 && !_stopWords.contains(clean)) {
+            wordFreq[clean] = (wordFreq[clean] ?? 0) + 1;
+          }
+        }
+        final sorted = wordFreq.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+        final topTopics = sorted.take(5).map((e) => e.key).join(', ');
+
+        setState(() {
+          _isLoading = false;
+          _summary = allText.length > 2000
+              ? 'You have ${notes.length} note(s) with ${words.length} total words.\n\n'
+                  '**Key topics**: $topTopics\n\n'
+                  '${allText.substring(0, 2000)}...\n\n'
+                  'Install a local LLM model for AI-powered summaries.'
+              : allText;
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _summary = 'Error: $e';
-          _isLoading = false;
-        });
-      }
+      setState(() {
+        _isLoading = false;
+        _error = e.toString();
+      });
     }
   }
 
-  Future<void> _copyToClipboard() async {
-    await Clipboard.setData(ClipboardData(text: _summary));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Summary copied to clipboard')),
-      );
-    }
-  }
+  static const _stopWords = {
+    'this', 'that', 'with', 'from', 'have', 'been', 'were', 'they', 'their',
+    'what', 'when', 'where', 'which', 'there', 'about', 'would', 'could',
+    'should', 'also', 'than', 'then', 'into', 'more', 'some', 'such', 'just',
+    'because', 'these', 'those', 'while',
+  };
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Summarize'),
-        centerTitle: true,
+        title: const Text('Summarize Notes'),
         actions: [
-          if (_summary.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.copy_outlined),
-              onPressed: _copyToClipboard,
-              tooltip: 'Copy to clipboard',
-            ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _summary.isNotEmpty ? _summarize : null,
+          ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Document selector
-            if (_documents.length > 1) ...[
-              DropdownButtonFormField<Document>(
-                value: _selectedDocument,
-                decoration: const InputDecoration(
-                  labelText: 'Document',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                ),
-                items: _documents.map((doc) => DropdownMenuItem(
-                  value: doc,
-                  child: Text(doc.name, overflow: TextOverflow.ellipsis),
-                )).toList(),
-                onChanged: (doc) => setState(() {
-                  _selectedDocument = doc;
-                  _summary = '';
-                }),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // Summary type selector
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(
-                  value: 'concise',
-                  label: Text('Concise'),
-                  icon: Icon(Icons.short_text),
-                ),
-                ButtonSegment(
-                  value: 'detailed',
-                  label: Text('Detailed'),
-                  icon: Icon(Icons.subject),
-                ),
-                ButtonSegment(
-                  value: 'bullet_points',
-                  label: Text('Bullet'),
-                  icon: Icon(Icons.format_list_bulleted),
-                ),
-              ],
-              selected: {_summaryType},
-              onSelectionChanged: (selected) => setState(() {
-                _summaryType = selected.first;
-                _summary = '';
-              }),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Generate button
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: FilledButton.icon(
-                onPressed: _selectedDocument == null || _isLoading
-                    ? null
-                    : _generateSummary,
-                icon: _isLoading
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.auto_awesome),
-                label: Text(_isLoading ? 'Generating...' : 'Generate Summary'),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // Summary output
-            if (_summary.isNotEmpty)
-              Expanded(
-                child: Card(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.auto_awesome,
-                              size: 18,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Summary',
-                              style: Theme.of(context).textTheme.titleSmall,
-                            ),
-                          ],
-                        ),
-                        const Divider(),
-                        Text(
-                          _summary,
-                          style: const TextStyle(fontSize: 14, height: 1.65),
-                        ),
+                        const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                        const SizedBox(height: 16),
+                        Text('Error: $_error', textAlign: TextAlign.center),
+                        const SizedBox(height: 16),
+                        FilledButton(onPressed: _summarize, child: const Text('Retry')),
                       ],
                     ),
                   ),
-                ),
-              ),
-
-            if (_documents.isEmpty)
-              const Expanded(
-                child: Center(
-                  child: Text(
-                    'Add documents from the home screen\nto generate summaries.',
-                    textAlign: TextAlign.center,
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _summary,
+                        style: const TextStyle(fontSize: 16, height: 1.6),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-          ],
-        ),
-      ),
     );
   }
 }

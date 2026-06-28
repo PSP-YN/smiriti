@@ -15,6 +15,7 @@ import 'package:objectbox/internal.dart'
 import 'package:objectbox/objectbox.dart' as obx;
 import 'package:objectbox_flutter_libs/objectbox_flutter_libs.dart';
 
+import 'data/models/objectbox_chat_message.dart';
 import 'data/models/objectbox_chunk.dart';
 import 'data/models/objectbox_document.dart';
 import 'data/models/objectbox_note.dart';
@@ -24,49 +25,94 @@ export 'package:objectbox/objectbox.dart'; // so that callers only have to impor
 
 final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
-      id: const obx_int.IdUid(1, 5752376948486632411),
-      name: 'ObjectBoxChunk',
-      lastPropertyId: const obx_int.IdUid(8, 4710694983216969748),
+      id: const obx_int.IdUid(1, 70095912219849092),
+      name: 'ObjectBoxChatMessage',
+      lastPropertyId: const obx_int.IdUid(7, 6093146786832257992),
       flags: 0,
       properties: <obx_int.ModelProperty>[
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(1, 4217316305337645588),
+            id: const obx_int.IdUid(1, 5346717029957293011),
             name: 'id',
             type: 6,
             flags: 1),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(2, 93484344158144663),
-            name: 'documentId',
+            id: const obx_int.IdUid(2, 1965734523196384118),
+            name: 'sessionId',
             type: 9,
             flags: 2048,
-            indexId: const obx_int.IdUid(1, 7624344973327968582)),
+            indexId: const obx_int.IdUid(1, 9068471583488060269)),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(3, 9182622059443275615),
-            name: 'content',
+            id: const obx_int.IdUid(3, 5560146610673051466),
+            name: 'message',
             type: 9,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(4, 8534437329219131233),
-            name: 'pageNumber',
-            type: 6,
+            id: const obx_int.IdUid(4, 818321753896265822),
+            name: 'isUser',
+            type: 1,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(5, 3242493948771489385),
-            name: 'position',
-            type: 6,
-            flags: 0),
-        obx_int.ModelProperty(
-            id: const obx_int.IdUid(6, 2094643606052671253),
-            name: 'embedding',
-            type: 23,
-            flags: 0),
-        obx_int.ModelProperty(
-            id: const obx_int.IdUid(7, 7098043879795265361),
+            id: const obx_int.IdUid(5, 2803501313511912332),
             name: 'createdAt',
             type: 9,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(8, 4710694983216969748),
+            id: const obx_int.IdUid(6, 6170705226249217933),
+            name: 'sourcesJson',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(7, 6093146786832257992),
+            name: 'confidence',
+            type: 8,
+            flags: 0)
+      ],
+      relations: <obx_int.ModelRelation>[],
+      backlinks: <obx_int.ModelBacklink>[]),
+  obx_int.ModelEntity(
+      id: const obx_int.IdUid(2, 4796042999216434710),
+      name: 'ObjectBoxChunk',
+      lastPropertyId: const obx_int.IdUid(8, 9121788393007115759),
+      flags: 0,
+      properties: <obx_int.ModelProperty>[
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(1, 4307113531567201693),
+            name: 'id',
+            type: 6,
+            flags: 1),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(2, 1774447171834683449),
+            name: 'documentId',
+            type: 9,
+            flags: 2048,
+            indexId: const obx_int.IdUid(2, 6687821231403540417)),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(3, 8297291578769547082),
+            name: 'content',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(4, 8434153329814476627),
+            name: 'pageNumber',
+            type: 6,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(5, 7842181079355753024),
+            name: 'position',
+            type: 6,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(6, 7202735217592393453),
+            name: 'embedding',
+            type: 23,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(7, 8529600925162216924),
+            name: 'createdAt',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(8, 9121788393007115759),
             name: 'embeddingFloats',
             type: 29,
             flags: 0)
@@ -74,94 +120,99 @@ final _entities = <obx_int.ModelEntity>[
       relations: <obx_int.ModelRelation>[],
       backlinks: <obx_int.ModelBacklink>[]),
   obx_int.ModelEntity(
-      id: const obx_int.IdUid(2, 5498315713320911215),
+      id: const obx_int.IdUid(3, 5330809989755394351),
       name: 'ObjectBoxDocument',
-      lastPropertyId: const obx_int.IdUid(8, 2191930345903969694),
+      lastPropertyId: const obx_int.IdUid(9, 4043302295713942750),
       flags: 0,
       properties: <obx_int.ModelProperty>[
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(1, 8377768547457799204),
+            id: const obx_int.IdUid(1, 3811255988186749926),
             name: 'id',
             type: 6,
             flags: 1),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(2, 8017336093586883171),
+            id: const obx_int.IdUid(2, 6521089612894478879),
             name: 'documentId',
             type: 9,
             flags: 2080,
-            indexId: const obx_int.IdUid(2, 5046353204677322969)),
+            indexId: const obx_int.IdUid(3, 4197572228611052261)),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(3, 3139375862999256611),
+            id: const obx_int.IdUid(3, 3176713901964846548),
             name: 'name',
             type: 9,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(4, 683684820295067005),
+            id: const obx_int.IdUid(4, 1658903238872802620),
             name: 'path',
             type: 9,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(5, 3115022755464442768),
+            id: const obx_int.IdUid(5, 4037048565733709517),
             name: 'type',
             type: 9,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(6, 8335064291106861995),
+            id: const obx_int.IdUid(6, 8180085581317642945),
             name: 'createdAt',
             type: 9,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(7, 173305646034291062),
+            id: const obx_int.IdUid(7, 8945226198595954440),
             name: 'pageCount',
             type: 6,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(8, 2191930345903969694),
+            id: const obx_int.IdUid(8, 8165363350766095828),
             name: 'thumbnailPath',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(9, 4043302295713942750),
+            name: 'notebookId',
             type: 9,
             flags: 0)
       ],
       relations: <obx_int.ModelRelation>[],
       backlinks: <obx_int.ModelBacklink>[]),
   obx_int.ModelEntity(
-      id: const obx_int.IdUid(3, 6808806663175637338),
+      id: const obx_int.IdUid(4, 4252879101888351892),
       name: 'ObjectBoxNote',
-      lastPropertyId: const obx_int.IdUid(7, 3345807137182136305),
+      lastPropertyId: const obx_int.IdUid(7, 7611451638583772033),
       flags: 0,
       properties: <obx_int.ModelProperty>[
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(1, 7817559497322963302),
+            id: const obx_int.IdUid(1, 9163981027641885986),
             name: 'id',
             type: 6,
             flags: 1),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(2, 6789664879640892386),
+            id: const obx_int.IdUid(2, 4150022998850826023),
             name: 'noteId',
             type: 9,
             flags: 2080,
-            indexId: const obx_int.IdUid(3, 4331279497352270461)),
+            indexId: const obx_int.IdUid(4, 1487626603794264060)),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(3, 1057515790788944771),
+            id: const obx_int.IdUid(3, 6451756692923894220),
             name: 'title',
             type: 9,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(4, 4561259430437369190),
+            id: const obx_int.IdUid(4, 3832096583350316204),
             name: 'content',
             type: 9,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(5, 1868204772331170039),
+            id: const obx_int.IdUid(5, 8297876183018602166),
             name: 'createdAt',
             type: 9,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(6, 3993943566058813616),
+            id: const obx_int.IdUid(6, 1333399944421522239),
             name: 'updatedAt',
             type: 9,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(7, 3345807137182136305),
+            id: const obx_int.IdUid(7, 7611451638583772033),
             name: 'notebookId',
             type: 9,
             flags: 0)
@@ -169,34 +220,34 @@ final _entities = <obx_int.ModelEntity>[
       relations: <obx_int.ModelRelation>[],
       backlinks: <obx_int.ModelBacklink>[]),
   obx_int.ModelEntity(
-      id: const obx_int.IdUid(4, 4223890816453769388),
+      id: const obx_int.IdUid(5, 9086876459550883693),
       name: 'ObjectBoxNotebook',
-      lastPropertyId: const obx_int.IdUid(5, 1297147335903721179),
+      lastPropertyId: const obx_int.IdUid(5, 2729481667307228356),
       flags: 0,
       properties: <obx_int.ModelProperty>[
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(1, 3190430825112072819),
+            id: const obx_int.IdUid(1, 7278731792085442890),
             name: 'id',
             type: 6,
             flags: 1),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(2, 6575732969816326392),
+            id: const obx_int.IdUid(2, 6623244921349918242),
             name: 'notebookId',
             type: 9,
             flags: 2080,
-            indexId: const obx_int.IdUid(4, 3595500795076683642)),
+            indexId: const obx_int.IdUid(5, 4251581811241878659)),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(3, 3231232895661826654),
+            id: const obx_int.IdUid(3, 4730773956970474990),
             name: 'name',
             type: 9,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(4, 5571371124978105282),
+            id: const obx_int.IdUid(4, 4057729883797477419),
             name: 'description',
             type: 9,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(5, 1297147335903721179),
+            id: const obx_int.IdUid(5, 2729481667307228356),
             name: 'createdAt',
             type: 9,
             flags: 0)
@@ -240,8 +291,8 @@ Future<obx.Store> openStore(
 obx_int.ModelDefinition getObjectBoxModel() {
   final model = obx_int.ModelInfo(
       entities: _entities,
-      lastEntityId: const obx_int.IdUid(4, 4223890816453769388),
-      lastIndexId: const obx_int.IdUid(4, 3595500795076683642),
+      lastEntityId: const obx_int.IdUid(5, 9086876459550883693),
+      lastIndexId: const obx_int.IdUid(5, 4251581811241878659),
       lastRelationId: const obx_int.IdUid(0, 0),
       lastSequenceId: const obx_int.IdUid(0, 0),
       retiredEntityUids: const [],
@@ -253,8 +304,61 @@ obx_int.ModelDefinition getObjectBoxModel() {
       version: 1);
 
   final bindings = <Type, obx_int.EntityDefinition>{
-    ObjectBoxChunk: obx_int.EntityDefinition<ObjectBoxChunk>(
+    ObjectBoxChatMessage: obx_int.EntityDefinition<ObjectBoxChatMessage>(
         model: _entities[0],
+        toOneRelations: (ObjectBoxChatMessage object) => [],
+        toManyRelations: (ObjectBoxChatMessage object) => {},
+        getId: (ObjectBoxChatMessage object) => object.id,
+        setId: (ObjectBoxChatMessage object, int id) {
+          object.id = id;
+        },
+        objectToFB: (ObjectBoxChatMessage object, fb.Builder fbb) {
+          final sessionIdOffset = fbb.writeString(object.sessionId);
+          final messageOffset = fbb.writeString(object.message);
+          final createdAtOffset = fbb.writeString(object.createdAt);
+          final sourcesJsonOffset = object.sourcesJson == null
+              ? null
+              : fbb.writeString(object.sourcesJson!);
+          fbb.startTable(8);
+          fbb.addInt64(0, object.id);
+          fbb.addOffset(1, sessionIdOffset);
+          fbb.addOffset(2, messageOffset);
+          fbb.addBool(3, object.isUser);
+          fbb.addOffset(4, createdAtOffset);
+          fbb.addOffset(5, sourcesJsonOffset);
+          fbb.addFloat64(6, object.confidence);
+          fbb.finish(fbb.endTable());
+          return object.id;
+        },
+        objectFromFB: (obx.Store store, ByteData fbData) {
+          final buffer = fb.BufferContext(fbData);
+          final rootOffset = buffer.derefObject(0);
+          final sessionIdParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGet(buffer, rootOffset, 6, '');
+          final messageParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGet(buffer, rootOffset, 8, '');
+          final isUserParam =
+              const fb.BoolReader().vTableGet(buffer, rootOffset, 10, false);
+          final createdAtParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGet(buffer, rootOffset, 12, '');
+          final sourcesJsonParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGetNullable(buffer, rootOffset, 14);
+          final confidenceParam = const fb.Float64Reader()
+              .vTableGetNullable(buffer, rootOffset, 16);
+          final object = ObjectBoxChatMessage(
+              sessionId: sessionIdParam,
+              message: messageParam,
+              isUser: isUserParam,
+              createdAt: createdAtParam,
+              sourcesJson: sourcesJsonParam,
+              confidence: confidenceParam)
+            ..id = const fb.Int64Reader().vTableGet(buffer, rootOffset, 4, 0);
+
+          return object;
+        }),
+    ObjectBoxChunk: obx_int.EntityDefinition<ObjectBoxChunk>(
+        model: _entities[1],
         toOneRelations: (ObjectBoxChunk object) => [],
         toManyRelations: (ObjectBoxChunk object) => {},
         getId: (ObjectBoxChunk object) => object.id,
@@ -314,7 +418,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           return object;
         }),
     ObjectBoxDocument: obx_int.EntityDefinition<ObjectBoxDocument>(
-        model: _entities[1],
+        model: _entities[2],
         toOneRelations: (ObjectBoxDocument object) => [],
         toManyRelations: (ObjectBoxDocument object) => {},
         getId: (ObjectBoxDocument object) => object.id,
@@ -330,7 +434,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final thumbnailPathOffset = object.thumbnailPath == null
               ? null
               : fbb.writeString(object.thumbnailPath!);
-          fbb.startTable(9);
+          final notebookIdOffset = object.notebookId == null
+              ? null
+              : fbb.writeString(object.notebookId!);
+          fbb.startTable(10);
           fbb.addInt64(0, object.id);
           fbb.addOffset(1, documentIdOffset);
           fbb.addOffset(2, nameOffset);
@@ -339,6 +446,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           fbb.addOffset(5, createdAtOffset);
           fbb.addInt64(6, object.pageCount);
           fbb.addOffset(7, thumbnailPathOffset);
+          fbb.addOffset(8, notebookIdOffset);
           fbb.finish(fbb.endTable());
           return object.id;
         },
@@ -360,6 +468,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final thumbnailPathParam =
               const fb.StringReader(asciiOptimization: true)
                   .vTableGetNullable(buffer, rootOffset, 18);
+          final notebookIdParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGetNullable(buffer, rootOffset, 20);
           final object = ObjectBoxDocument(
               documentId: documentIdParam,
               name: nameParam,
@@ -367,13 +477,14 @@ obx_int.ModelDefinition getObjectBoxModel() {
               type: typeParam,
               createdAt: createdAtParam,
               pageCount: pageCountParam,
-              thumbnailPath: thumbnailPathParam)
+              thumbnailPath: thumbnailPathParam,
+              notebookId: notebookIdParam)
             ..id = const fb.Int64Reader().vTableGet(buffer, rootOffset, 4, 0);
 
           return object;
         }),
     ObjectBoxNote: obx_int.EntityDefinition<ObjectBoxNote>(
-        model: _entities[2],
+        model: _entities[3],
         toOneRelations: (ObjectBoxNote object) => [],
         toManyRelations: (ObjectBoxNote object) => {},
         getId: (ObjectBoxNote object) => object.id,
@@ -427,7 +538,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           return object;
         }),
     ObjectBoxNotebook: obx_int.EntityDefinition<ObjectBoxNotebook>(
-        model: _entities[3],
+        model: _entities[4],
         toOneRelations: (ObjectBoxNotebook object) => [],
         toManyRelations: (ObjectBoxNotebook object) => {},
         getId: (ObjectBoxNotebook object) => object.id,
@@ -474,126 +585,161 @@ obx_int.ModelDefinition getObjectBoxModel() {
   return obx_int.ModelDefinition(model, bindings);
 }
 
+/// [ObjectBoxChatMessage] entity fields to define ObjectBox queries.
+class ObjectBoxChatMessage_ {
+  /// see [ObjectBoxChatMessage.id]
+  static final id = obx.QueryIntegerProperty<ObjectBoxChatMessage>(
+      _entities[0].properties[0]);
+
+  /// see [ObjectBoxChatMessage.sessionId]
+  static final sessionId =
+      obx.QueryStringProperty<ObjectBoxChatMessage>(_entities[0].properties[1]);
+
+  /// see [ObjectBoxChatMessage.message]
+  static final message =
+      obx.QueryStringProperty<ObjectBoxChatMessage>(_entities[0].properties[2]);
+
+  /// see [ObjectBoxChatMessage.isUser]
+  static final isUser = obx.QueryBooleanProperty<ObjectBoxChatMessage>(
+      _entities[0].properties[3]);
+
+  /// see [ObjectBoxChatMessage.createdAt]
+  static final createdAt =
+      obx.QueryStringProperty<ObjectBoxChatMessage>(_entities[0].properties[4]);
+
+  /// see [ObjectBoxChatMessage.sourcesJson]
+  static final sourcesJson =
+      obx.QueryStringProperty<ObjectBoxChatMessage>(_entities[0].properties[5]);
+
+  /// see [ObjectBoxChatMessage.confidence]
+  static final confidence =
+      obx.QueryDoubleProperty<ObjectBoxChatMessage>(_entities[0].properties[6]);
+}
+
 /// [ObjectBoxChunk] entity fields to define ObjectBox queries.
 class ObjectBoxChunk_ {
   /// see [ObjectBoxChunk.id]
   static final id =
-      obx.QueryIntegerProperty<ObjectBoxChunk>(_entities[0].properties[0]);
+      obx.QueryIntegerProperty<ObjectBoxChunk>(_entities[1].properties[0]);
 
   /// see [ObjectBoxChunk.documentId]
   static final documentId =
-      obx.QueryStringProperty<ObjectBoxChunk>(_entities[0].properties[1]);
+      obx.QueryStringProperty<ObjectBoxChunk>(_entities[1].properties[1]);
 
   /// see [ObjectBoxChunk.content]
   static final content =
-      obx.QueryStringProperty<ObjectBoxChunk>(_entities[0].properties[2]);
+      obx.QueryStringProperty<ObjectBoxChunk>(_entities[1].properties[2]);
 
   /// see [ObjectBoxChunk.pageNumber]
   static final pageNumber =
-      obx.QueryIntegerProperty<ObjectBoxChunk>(_entities[0].properties[3]);
+      obx.QueryIntegerProperty<ObjectBoxChunk>(_entities[1].properties[3]);
 
   /// see [ObjectBoxChunk.position]
   static final position =
-      obx.QueryIntegerProperty<ObjectBoxChunk>(_entities[0].properties[4]);
+      obx.QueryIntegerProperty<ObjectBoxChunk>(_entities[1].properties[4]);
 
   /// see [ObjectBoxChunk.embedding]
   static final embedding =
-      obx.QueryByteVectorProperty<ObjectBoxChunk>(_entities[0].properties[5]);
+      obx.QueryByteVectorProperty<ObjectBoxChunk>(_entities[1].properties[5]);
 
   /// see [ObjectBoxChunk.createdAt]
   static final createdAt =
-      obx.QueryStringProperty<ObjectBoxChunk>(_entities[0].properties[6]);
+      obx.QueryStringProperty<ObjectBoxChunk>(_entities[1].properties[6]);
 
   /// see [ObjectBoxChunk.embeddingFloats]
   static final embeddingFloats =
-      obx.QueryDoubleVectorProperty<ObjectBoxChunk>(_entities[0].properties[7]);
+      obx.QueryDoubleVectorProperty<ObjectBoxChunk>(_entities[1].properties[7]);
 }
 
 /// [ObjectBoxDocument] entity fields to define ObjectBox queries.
 class ObjectBoxDocument_ {
   /// see [ObjectBoxDocument.id]
   static final id =
-      obx.QueryIntegerProperty<ObjectBoxDocument>(_entities[1].properties[0]);
+      obx.QueryIntegerProperty<ObjectBoxDocument>(_entities[2].properties[0]);
 
   /// see [ObjectBoxDocument.documentId]
   static final documentId =
-      obx.QueryStringProperty<ObjectBoxDocument>(_entities[1].properties[1]);
+      obx.QueryStringProperty<ObjectBoxDocument>(_entities[2].properties[1]);
 
   /// see [ObjectBoxDocument.name]
   static final name =
-      obx.QueryStringProperty<ObjectBoxDocument>(_entities[1].properties[2]);
+      obx.QueryStringProperty<ObjectBoxDocument>(_entities[2].properties[2]);
 
   /// see [ObjectBoxDocument.path]
   static final path =
-      obx.QueryStringProperty<ObjectBoxDocument>(_entities[1].properties[3]);
+      obx.QueryStringProperty<ObjectBoxDocument>(_entities[2].properties[3]);
 
   /// see [ObjectBoxDocument.type]
   static final type =
-      obx.QueryStringProperty<ObjectBoxDocument>(_entities[1].properties[4]);
+      obx.QueryStringProperty<ObjectBoxDocument>(_entities[2].properties[4]);
 
   /// see [ObjectBoxDocument.createdAt]
   static final createdAt =
-      obx.QueryStringProperty<ObjectBoxDocument>(_entities[1].properties[5]);
+      obx.QueryStringProperty<ObjectBoxDocument>(_entities[2].properties[5]);
 
   /// see [ObjectBoxDocument.pageCount]
   static final pageCount =
-      obx.QueryIntegerProperty<ObjectBoxDocument>(_entities[1].properties[6]);
+      obx.QueryIntegerProperty<ObjectBoxDocument>(_entities[2].properties[6]);
 
   /// see [ObjectBoxDocument.thumbnailPath]
   static final thumbnailPath =
-      obx.QueryStringProperty<ObjectBoxDocument>(_entities[1].properties[7]);
+      obx.QueryStringProperty<ObjectBoxDocument>(_entities[2].properties[7]);
+
+  /// see [ObjectBoxDocument.notebookId]
+  static final notebookId =
+      obx.QueryStringProperty<ObjectBoxDocument>(_entities[2].properties[8]);
 }
 
 /// [ObjectBoxNote] entity fields to define ObjectBox queries.
 class ObjectBoxNote_ {
   /// see [ObjectBoxNote.id]
   static final id =
-      obx.QueryIntegerProperty<ObjectBoxNote>(_entities[2].properties[0]);
+      obx.QueryIntegerProperty<ObjectBoxNote>(_entities[3].properties[0]);
 
   /// see [ObjectBoxNote.noteId]
   static final noteId =
-      obx.QueryStringProperty<ObjectBoxNote>(_entities[2].properties[1]);
+      obx.QueryStringProperty<ObjectBoxNote>(_entities[3].properties[1]);
 
   /// see [ObjectBoxNote.title]
   static final title =
-      obx.QueryStringProperty<ObjectBoxNote>(_entities[2].properties[2]);
+      obx.QueryStringProperty<ObjectBoxNote>(_entities[3].properties[2]);
 
   /// see [ObjectBoxNote.content]
   static final content =
-      obx.QueryStringProperty<ObjectBoxNote>(_entities[2].properties[3]);
+      obx.QueryStringProperty<ObjectBoxNote>(_entities[3].properties[3]);
 
   /// see [ObjectBoxNote.createdAt]
   static final createdAt =
-      obx.QueryStringProperty<ObjectBoxNote>(_entities[2].properties[4]);
+      obx.QueryStringProperty<ObjectBoxNote>(_entities[3].properties[4]);
 
   /// see [ObjectBoxNote.updatedAt]
   static final updatedAt =
-      obx.QueryStringProperty<ObjectBoxNote>(_entities[2].properties[5]);
+      obx.QueryStringProperty<ObjectBoxNote>(_entities[3].properties[5]);
 
   /// see [ObjectBoxNote.notebookId]
   static final notebookId =
-      obx.QueryStringProperty<ObjectBoxNote>(_entities[2].properties[6]);
+      obx.QueryStringProperty<ObjectBoxNote>(_entities[3].properties[6]);
 }
 
 /// [ObjectBoxNotebook] entity fields to define ObjectBox queries.
 class ObjectBoxNotebook_ {
   /// see [ObjectBoxNotebook.id]
   static final id =
-      obx.QueryIntegerProperty<ObjectBoxNotebook>(_entities[3].properties[0]);
+      obx.QueryIntegerProperty<ObjectBoxNotebook>(_entities[4].properties[0]);
 
   /// see [ObjectBoxNotebook.notebookId]
   static final notebookId =
-      obx.QueryStringProperty<ObjectBoxNotebook>(_entities[3].properties[1]);
+      obx.QueryStringProperty<ObjectBoxNotebook>(_entities[4].properties[1]);
 
   /// see [ObjectBoxNotebook.name]
   static final name =
-      obx.QueryStringProperty<ObjectBoxNotebook>(_entities[3].properties[2]);
+      obx.QueryStringProperty<ObjectBoxNotebook>(_entities[4].properties[2]);
 
   /// see [ObjectBoxNotebook.description]
   static final description =
-      obx.QueryStringProperty<ObjectBoxNotebook>(_entities[3].properties[3]);
+      obx.QueryStringProperty<ObjectBoxNotebook>(_entities[4].properties[3]);
 
   /// see [ObjectBoxNotebook.createdAt]
   static final createdAt =
-      obx.QueryStringProperty<ObjectBoxNotebook>(_entities[3].properties[4]);
+      obx.QueryStringProperty<ObjectBoxNotebook>(_entities[4].properties[4]);
 }

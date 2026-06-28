@@ -227,6 +227,9 @@ class LLMService {
     }
     _isInitialized = false;
     _isGenerating = false;
+    if (!_tokenStreamController.isClosed) {
+      _tokenStreamController.close();
+    }
   }
 
   // ── Model info ────────────────────────────────────────────────────────────

@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
 
@@ -10,7 +12,10 @@ class EmbeddingService {
   static const int embeddingDim = 384;
   static const int maxSequenceLength = 512;
   static const String modelName = 'all-minilm-l6-v2-q.tflite';
-  
+
+  static Map<String, int>? _vocab;
+  static bool _vocabLoaded = false;
+
   static bool get isInitialized => _interpreter != null;
 
   static Future<void> initialize() async {
@@ -24,8 +29,23 @@ class EmbeddingService {
           ..threads = 4
           ..useNnApiForAndroid = true,
       );
+      await _loadVocab();
     } catch (e) {
       throw Exception('Failed to load embedding model: $e');
+    }
+  }
+
+  static Future<void> _loadVocab() async {
+    try {
+      final jsonStr = await rootBundle.loadString('assets/vocab.json');
+      final List<dynamic> list = jsonDecode(jsonStr);
+      _vocab = {};
+      for (var i = 0; i < list.length; i++) {
+        _vocab![list[i] as String] = i;
+      }
+      _vocabLoaded = true;
+    } catch (_) {
+      _vocabLoaded = false;
     }
   }
 
@@ -37,9 +57,55 @@ class EmbeddingService {
       return modelFile.path;
     }
 
-    // Model not downloaded yet - return placeholder path
-    // In production, this would trigger a download
     throw Exception('Embedding model not found. Please download the model first.');
+  }
+
+  static List<int> _wordPieceTokenize(String text) {
+    final normalized = text.toLowerCase().trim();
+    final words = normalized.split(RegExp(r'\s+'));
+    final tokens = <int>[];
+
+    if (_vocabLoaded) {
+      tokens.add(_vocab!['[CLS]'] ?? 101);
+      for (final word in words) {
+        if (word.isEmpty) continue;
+        if (_vocab!.containsKey(word)) {
+          tokens.add(_vocab![word]!);
+        } else {
+          String remaining = word;
+          while (remaining.isNotEmpty) {
+            String bestSub = '';
+            for (var i = remaining.length; i > 0; i--) {
+              final sub = i < remaining.length ? '##${remaining.substring(0, i)}' : remaining.substring(0, i);
+              if (_vocab!.containsKey(sub)) {
+                bestSub = sub;
+                break;
+              }
+            }
+            if (bestSub.isNotEmpty) {
+              tokens.add(_vocab![bestSub]!);
+              remaining = remaining.substring(bestSub.replaceFirst('##', '').length);
+            } else {
+              tokens.add(_vocab!['[UNK]'] ?? 100);
+              break;
+            }
+          }
+        }
+        if (tokens.length >= maxSequenceLength - 1) break;
+      }
+      tokens.add(_vocab!['[SEP]'] ?? 102);
+    } else {
+      tokens.addAll([
+        101,
+        ...words.expand((w) => w.split('').map((c) => c.codeUnitAt(0) % 30000 + 1)),
+        102,
+      ]);
+    }
+
+    if (tokens.length > maxSequenceLength) {
+      return tokens.sublist(0, maxSequenceLength - 1)..add(102);
+    }
+    return tokens;
   }
 
   static Future<List<double>> embed(String text) async {
@@ -47,25 +113,24 @@ class EmbeddingService {
       throw StateError('EmbeddingService not initialized');
     }
 
-    // Simple tokenization (word-based for now)
-    // In production, use proper tokenizer from transformers
-    final tokens = _simpleTokenize(text);
+    final tokenIds = _wordPieceTokenize(text);
+
     final inputShape = [1, maxSequenceLength];
-    final inputBuffer = Float32List(maxSequenceLength);
-    
-    // Fill input with token IDs (simplified)
-    for (var i = 0; i < min(tokens.length, maxSequenceLength); i++) {
-      inputBuffer[i] = tokens[i];
+    final inputBuffer = Int32List(maxSequenceLength);
+    final attentionMask = Int32List(maxSequenceLength);
+    final tokenTypeIds = Int32List(maxSequenceLength);
+
+    for (var i = 0; i < min(tokenIds.length, maxSequenceLength); i++) {
+      inputBuffer[i] = tokenIds[i];
+      attentionMask[i] = 1;
     }
 
-    // Create input tensor
-    final input = inputBuffer.reshape(inputShape);
-    final output = List.filled(embeddingDim, 0.0).reshape([1, embeddingDim]);
+    final input = [inputBuffer.reshape(inputShape), attentionMask.reshape(inputShape), tokenTypeIds.reshape(inputShape)];
+    final outputMap = <int, Object>{0: List.filled(embeddingDim, 0.0).reshape([1, embeddingDim])};
 
-    _interpreter!.run(input, output);
+    _interpreter!.runForMultipleInputs(input, outputMap);
 
-    // Normalize the embedding
-    final embedding = (output[0] as List<double>);
+    final embedding = (outputMap[0] as List)[0] as List<double>;
     return _normalize(embedding);
   }
 
@@ -81,28 +146,15 @@ class EmbeddingService {
     return results;
   }
 
-  static List<double> _simpleTokenize(String text) {
-    // Simplified tokenization - in production, use WordPiece/BPE tokenizer
-    // This is a placeholder that creates pseudo-token IDs from character codes
-    final normalized = text.toLowerCase().trim();
-    final tokens = <double>[];
-    
-    for (var i = 0; i < normalized.length && i < maxSequenceLength; i++) {
-      tokens.add((normalized.codeUnitAt(i) % 30000).toDouble() + 1);
-    }
-    
-    return tokens;
-  }
-
   static List<double> _normalize(List<double> vector) {
     var sum = 0.0;
     for (final val in vector) {
       sum += val * val;
     }
     final magnitude = sqrt(sum);
-    
+
     if (magnitude == 0) return vector;
-    
+
     return vector.map((v) => v / magnitude).toList();
   }
 
@@ -122,5 +174,7 @@ class EmbeddingService {
   static void dispose() {
     _interpreter?.close();
     _interpreter = null;
+    _vocab = null;
+    _vocabLoaded = false;
   }
 }

@@ -1,8 +1,6 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 import '../../core/constants/app_constants.dart';
@@ -10,6 +8,7 @@ import '../../core/services/audio_transcription_service.dart';
 import '../../core/services/ocr_service.dart';
 import '../../domain/entities/document.dart';
 import '../../domain/entities/document_chunk.dart';
+import '../models/objectbox_document.dart';
 import '../objectbox_store.dart';
 
 abstract class DocumentLocalDataSource {
@@ -22,35 +21,32 @@ abstract class DocumentLocalDataSource {
 }
 
 class DocumentLocalDataSourceImpl implements DocumentLocalDataSource {
-  final SharedPreferences _prefs;
-
-  DocumentLocalDataSourceImpl(this._prefs);
-
-  // ── Read ──────────────────────────────────────────────────────────────────
+  DocumentLocalDataSourceImpl();
 
   @override
   Future<List<Document>> getAllDocuments() async {
-    final json = _prefs.getString(AppConstants.documentsKey);
-    if (json == null) return [];
-    try {
-      final list = jsonDecode(json) as List<dynamic>;
-      return list.map((j) => Document.fromJson(j as Map<String, dynamic>)).toList();
-    } catch (e) {
-      return [];
-    }
+    final obDocs = ObjectBoxStore.getAllDocuments();
+    return obDocs.map(_toDocument).toList();
+  }
+
+  Document _toDocument(ObjectBoxDocument obDoc) {
+    return Document(
+      id: obDoc.documentId,
+      name: obDoc.name,
+      path: obDoc.path,
+      type: obDoc.type,
+      createdAt: DateTime.parse(obDoc.createdAt),
+      pageCount: obDoc.pageCount,
+      thumbnailPath: obDoc.thumbnailPath,
+    );
   }
 
   @override
   Future<Document?> getDocumentById(String id) async {
-    final docs = await getAllDocuments();
-    try {
-      return docs.firstWhere((d) => d.id == id);
-    } catch (_) {
-      return null;
-    }
+    final obDoc = ObjectBoxStore.getDocument(id);
+    if (obDoc == null) return null;
+    return _toDocument(obDoc);
   }
-
-  // ── Write ─────────────────────────────────────────────────────────────────
 
   @override
   Future<Document> saveDocument(File file) async {
@@ -67,7 +63,6 @@ class DocumentLocalDataSourceImpl implements DocumentLocalDataSource {
 
     await file.copy(destPath);
 
-    // ── Text extraction ────────────────────────────────────────────────────
     final List<String> extractedText;
     int pageCount;
 
@@ -85,7 +80,6 @@ class DocumentLocalDataSourceImpl implements DocumentLocalDataSource {
       extractedText = await _extractAudio(destPath);
       pageCount = 1;
     } else if (AppConstants.videoExtensions.contains(extension)) {
-      // For video, extract audio track and transcribe
       extractedText = await _extractAudio(destPath);
       pageCount = 1;
     } else {
@@ -103,53 +97,49 @@ class DocumentLocalDataSourceImpl implements DocumentLocalDataSource {
       extractedText: extractedText,
     );
 
-    // Persist metadata
-    final docs = await getAllDocuments();
-    docs.add(document);
-    await _persistDocuments(docs);
+    final obDoc = ObjectBoxDocument(
+      documentId: document.id,
+      name: document.name,
+      path: document.path,
+      type: document.type,
+      createdAt: document.createdAt.toIso8601String(),
+      pageCount: document.pageCount,
+      thumbnailPath: document.thumbnailPath,
+    );
+    ObjectBoxStore.insertDocument(obDoc);
 
     return document;
   }
 
   @override
   Future<void> deleteDocument(String id) async {
-    final docs = await getAllDocuments();
-    final idx = docs.indexWhere((d) => d.id == id);
-    if (idx != -1) {
-      final file = File(docs[idx].path);
+    final doc = ObjectBoxStore.getDocument(id);
+    if (doc != null) {
+      final file = File(doc.path);
       if (await file.exists()) await file.delete();
-      docs.removeAt(idx);
-      await _persistDocuments(docs);
     }
     ObjectBoxStore.deleteDocument(id);
   }
 
-  // ── Chunks ────────────────────────────────────────────────────────────────
-
   @override
   Future<void> saveDocumentChunks(
       String documentId, List<DocumentChunk> chunks) async {
-    await _prefs.setString(
-      'chunks_$documentId',
-      jsonEncode(chunks.map((c) => c.toJson()).toList()),
-    );
+    // Chunks are stored directly via ObjectBoxStore in RAGOrchestrator
   }
 
   @override
   Future<List<DocumentChunk>> getDocumentChunks(String documentId) async {
-    final json = _prefs.getString('chunks_$documentId');
-    if (json == null) return [];
-    try {
-      final list = jsonDecode(json) as List<dynamic>;
-      return list
-          .map((j) => DocumentChunk.fromJson(j as Map<String, dynamic>))
-          .toList();
-    } catch (_) {
-      return [];
-    }
+    final obChunks = ObjectBoxStore.getChunksForDocument(documentId);
+    return obChunks.map((c) => DocumentChunk(
+      id: c.id.toString(),
+      documentId: c.documentId,
+      content: c.content,
+      pageNumber: c.pageNumber,
+      position: c.position,
+      embedding: c.embeddingFloats,
+      createdAt: DateTime.parse(c.createdAt),
+    )).toList();
   }
-
-  // ── Private extraction helpers ────────────────────────────────────────────
 
   Future<List<String>> _extractPdf(String path) async {
     try {
@@ -197,14 +187,5 @@ class DocumentLocalDataSourceImpl implements DocumentLocalDataSource {
     } catch (e) {
       return ['[Audio transcription error: $e]'];
     }
-  }
-
-  // ── Persistence ───────────────────────────────────────────────────────────
-
-  Future<void> _persistDocuments(List<Document> docs) async {
-    await _prefs.setString(
-      AppConstants.documentsKey,
-      jsonEncode(docs.map((d) => d.toJson()).toList()),
-    );
   }
 }

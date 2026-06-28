@@ -1,7 +1,17 @@
+import java.io.FileInputStream
+import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
 }
 
 android {
@@ -14,25 +24,32 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     defaultConfig {
         applicationId = "com.smriti.app.smriti"
-        minSdk = 21
+        minSdk = flutter.minSdkVersion
         targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
 
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+    }
+
+    signingConfigs {
+        create("release") {
+            val keyPropsFile = rootProject.file("key.properties")
+            if (keyPropsFile.exists()) {
+                val keyProps = Properties()
+                keyProps.load(FileInputStream(keyPropsFile))
+                storeFile = rootProject.file(keyProps["storeFile"]!!)
+                keyAlias = keyProps["keyAlias"]!!.toString()
+                storePassword = keyProps["storePassword"]!!.toString()
+                keyPassword = keyProps["keyPassword"]!!.toString()
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

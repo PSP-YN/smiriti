@@ -159,5 +159,6 @@ class AudioTranscriptionService {
     }
     _isInitialized = false;
     _isProcessing = false;
+    _modelPath = null;
   }
 }

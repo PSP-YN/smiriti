@@ -15,6 +15,7 @@ class ObjectBoxDocument {
   String createdAt;
   int pageCount;
   String? thumbnailPath;
+  String? notebookId;
 
   @Transient()
   List<String> extractedText;
@@ -27,6 +28,7 @@ class ObjectBoxDocument {
     required this.createdAt,
     this.pageCount = 0,
     this.thumbnailPath,
+    this.notebookId,
     this.extractedText = const [],
   });
 
@@ -40,6 +42,7 @@ class ObjectBoxDocument {
       'createdAt': createdAt,
       'pageCount': pageCount,
       'thumbnailPath': thumbnailPath,
+      'notebookId': notebookId,
     };
   }
 
@@ -52,6 +55,7 @@ class ObjectBoxDocument {
       createdAt: json['createdAt'] as String,
       pageCount: json['pageCount'] as int? ?? 0,
       thumbnailPath: json['thumbnailPath'] as String?,
+      notebookId: json['notebookId'] as String?,
     )..id = json['id'] as int? ?? 0;
   }
 }

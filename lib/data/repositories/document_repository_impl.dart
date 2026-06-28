@@ -6,7 +6,6 @@ import '../../domain/entities/document_chunk.dart';
 import '../../domain/repositories/document_repository.dart';
 import '../../domain/services/rag_orchestrator.dart';
 import '../datasources/document_local_datasource.dart';
-import '../models/objectbox_document.dart';
 import '../models/objectbox_chunk.dart';
 import '../objectbox_store.dart';
 
@@ -17,27 +16,12 @@ class DocumentRepositoryImpl implements DocumentRepository {
 
   @override
   Future<List<Document>> getAllDocuments() async {
-    final obDocs = ObjectBoxStore.getAllDocuments();
-    return obDocs.map((obDoc) => _toDocument(obDoc)).toList();
+    return _localDataSource.getAllDocuments();
   }
 
   @override
   Future<Document?> getDocumentById(String id) async {
-    final obDoc = ObjectBoxStore.getDocument(id);
-    if (obDoc == null) return null;
-    return _toDocument(obDoc);
-  }
-
-  Document _toDocument(ObjectBoxDocument obDoc) {
-    return Document(
-      id: obDoc.documentId,
-      name: obDoc.name,
-      path: obDoc.path,
-      type: obDoc.type,
-      createdAt: DateTime.parse(obDoc.createdAt),
-      pageCount: obDoc.pageCount,
-      thumbnailPath: obDoc.thumbnailPath,
-    );
+    return _localDataSource.getDocumentById(id);
   }
 
   @override
@@ -52,8 +36,6 @@ class DocumentRepositoryImpl implements DocumentRepository {
 
   @override
   Future<List<String>> extractTextFromDocument(Document document) async {
-    // Delegate entirely to saveDocument which handles extraction internally.
-    // This method is kept for repository interface compliance.
     return document.extractedText;
   }
 
@@ -68,7 +50,6 @@ class DocumentRepositoryImpl implements DocumentRepository {
 
     await RAGOrchestrator.indexDocument(document, extractedText);
 
-    // Return chunks from ObjectBox
     final obChunks = ObjectBoxStore.getChunksForDocument(document.id);
     return obChunks.map((obChunk) => DocumentChunk(
       id: obChunk.id.toString(),
@@ -87,7 +68,6 @@ class DocumentRepositoryImpl implements DocumentRepository {
     int limit = 5,
   }) async {
     if (!EmbeddingService.isInitialized) {
-      // Fallback to keyword search if embeddings not available
       return _keywordSearch(query, limit);
     }
 
@@ -97,9 +77,9 @@ class DocumentRepositoryImpl implements DocumentRepository {
   Future<List<DocumentChunk>> _keywordSearch(String query, int limit) async {
     final queryWords = query.toLowerCase().split(' ');
     final allChunks = ObjectBoxStore.chunkBox.getAll();
-    
+
     final scoredChunks = <_ScoredChunk>[];
-    
+
     for (final chunk in allChunks) {
       final contentLower = chunk.content.toLowerCase();
       int matches = 0;
@@ -113,9 +93,9 @@ class DocumentRepositoryImpl implements DocumentRepository {
         scoredChunks.add(_ScoredChunk(chunk, score));
       }
     }
-    
+
     scoredChunks.sort((a, b) => b.score.compareTo(a.score));
-    
+
     return scoredChunks.take(limit).map((sc) => DocumentChunk(
       id: sc.chunk.id.toString(),
       documentId: sc.chunk.documentId,

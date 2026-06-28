@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:local_auth/local_auth.dart';
 
 /// Secure storage service for non-biometric data.
 class SecureStorageService {
@@ -18,14 +19,14 @@ class SecureStorageService {
     ),
   );
 
-  // Storage keys
+  static final LocalAuthentication _localAuth = LocalAuthentication();
+
   static const _encryptionKeyKey = 'smriti_enc_key_v2';
   static const _openaiKeyKey = 'smriti_openai_key';
   static const _anthropicKeyKey = 'smriti_anthropic_key';
   static const _googleKeyKey = 'smriti_google_key';
   static const _activeProviderKey = 'smriti_active_provider';
-
-  // ── Initialization ────────────────────────────────────────────────────────
+  static const _appLockEnabledKey = 'smriti_app_lock';
 
   static Future<void> initialize() async {
     final existing = await _storage.read(key: _encryptionKeyKey);
@@ -48,8 +49,6 @@ class SecureStorageService {
     return base64Decode(str);
   }
 
-  // ── API Key Management ──────────────────────────────────────────────────
-
   static Future<void> setOpenAIKey(String key) => _storage.write(key: _openaiKeyKey, value: key);
   static Future<String?> getOpenAIKey() => _storage.read(key: _openaiKeyKey);
 
@@ -64,15 +63,41 @@ class SecureStorageService {
   static Future<String> getActiveProvider() async =>
       (await _storage.read(key: _activeProviderKey)) ?? 'local';
 
-  // ── Biometric / App Lock (Deprecated - returns false) ────────────────────
+  static Future<void> setAppLockEnabled(bool enabled) async {
+    await _storage.write(key: _appLockEnabledKey, value: enabled.toString());
+  }
 
-  static Future<bool> isBiometricEnabled() async => false;
-  static Future<bool> isAppLockEnabled() async => false;
-  static Future<bool> canAuthenticateWithBiometrics() async => false;
-  static Future<bool> authenticateWithBiometrics({String reason = ''}) async => true;
+  static Future<bool> isAppLockEnabled() async {
+    final val = await _storage.read(key: _appLockEnabledKey);
+    return val == 'true';
+  }
 
-  // ── Generic Secure Store ─────────────────────────────────────────────────
+  static Future<bool> canAuthenticateWithBiometrics() async {
+    try {
+      return await _localAuth.canCheckBiometrics ||
+             await _localAuth.isDeviceSupported();
+    } catch (_) {
+      return false;
+    }
+  }
 
+  static Future<bool> isBiometricEnabled() async {
+    return await isAppLockEnabled() && await canAuthenticateWithBiometrics();
+  }
+
+  static Future<bool> authenticateWithBiometrics({String reason = ''}) async {
+    try {
+      return await _localAuth.authenticate(
+        localizedReason: reason.isNotEmpty ? reason : 'Authenticate to unlock Smriti',
+        options: const AuthenticationOptions(
+          biometricOnly: true,
+          stickyAuth: true,
+        ),
+      );
+    } catch (_) {
+      return false;
+    }
+  }
 
   static Future<void> write(String key, String value) =>
       _storage.write(key: key, value: value);

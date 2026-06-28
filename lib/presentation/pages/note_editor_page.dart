@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:uuid/uuid.dart';
-import '../../core/services/llm_service.dart';
+import 'package:share_plus/share_plus.dart' show Share;
+
 import '../../data/models/objectbox_note.dart';
+import '../../data/models/objectbox_notebook.dart';
 import '../../data/objectbox_store.dart';
 
 class NoteEditorPage extends StatefulWidget {
@@ -16,172 +17,172 @@ class NoteEditorPage extends StatefulWidget {
 class _NoteEditorPageState extends State<NoteEditorPage> {
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
+  List<ObjectBoxNotebook> _notebooks = [];
+  String? _selectedNotebookId;
+  bool _isLoading = true;
   bool _isSaving = false;
-  bool _isAIProcessing = false;
+
+  bool get _isEditing => widget.noteId != null;
 
   @override
   void initState() {
     super.initState();
-    if (widget.noteId != null) {
-      _loadNote();
-    }
+    _load();
   }
 
-  void _loadNote() {
-    final note = ObjectBoxStore.getNote(widget.noteId!);
-    if (note != null) {
-      _titleController.text = note.title;
-      _contentController.text = note.content;
-    }
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _contentController.dispose();
+    super.dispose();
   }
 
-  Future<void> _saveNote() async {
+  Future<void> _load() async {
+    final notebooks = ObjectBoxStore.getAllNotebooks();
+    setState(() => _notebooks = notebooks);
+
+    if (_isEditing) {
+      final note = ObjectBoxStore.getNoteById(widget.noteId!);
+      if (note != null) {
+        _titleController.text = note.title;
+        _contentController.text = note.content;
+        _selectedNotebookId = note.notebookId;
+      }
+    }
+    setState(() => _isLoading = false);
+  }
+
+  Future<void> _save() async {
+    final title = _titleController.text.trim();
+    final content = _contentController.text.trim();
+    if (title.isEmpty && content.isEmpty) return;
+
     setState(() => _isSaving = true);
+
     final now = DateTime.now().toIso8601String();
-    final noteId = widget.noteId ?? const Uuid().v4();
 
-    final note = ObjectBoxNote(
-      noteId: noteId,
-      title: _titleController.text.isEmpty ? 'Untitled' : _titleController.text,
-      content: _contentController.text,
-      createdAt: now,
-      updatedAt: now,
-    );
+    if (_isEditing) {
+      ObjectBoxStore.updateNote(widget.noteId!, title, content,
+          notebookId: _selectedNotebookId);
+    } else {
+      ObjectBoxStore.insertNote(ObjectBoxNote(
+        noteId: DateTime.now().millisecondsSinceEpoch.toString(),
+        title: title,
+        content: content,
+        createdAt: now,
+        updatedAt: now,
+        notebookId: _selectedNotebookId,
+      ));
+    }
 
-    ObjectBoxStore.insertNote(note);
     setState(() => _isSaving = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Note saved')),
-    );
+    if (mounted) Navigator.pop(context, true);
   }
 
-  Future<void> _askAI(String action) async {
-    if (_contentController.text.isEmpty) return;
+  Future<void> _share() async {
+    final text = '${_titleController.text}\n\n${_contentController.text}';
+    await Share.share(text);
+  }
 
-    setState(() => _isAIProcessing = true);
-    try {
-      String prompt = '';
-      if (action == 'summarize') {
-        prompt = 'Summarize the following text concisely:\n\n${_contentController.text}';
-      } else if (action == 'expand') {
-        prompt = 'Expand on the following thoughts and provide more detail:\n\n${_contentController.text}';
-      } else if (action == 'fix') {
-        prompt = 'Fix grammar and improve the clarity of the following text:\n\n${_contentController.text}';
-      }
-
-      final response = await LLMService.generate(prompt);
-
-      if (mounted) {
-        showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          builder: (ctx) => Container(
-            padding: const EdgeInsets.all(16),
-            height: MediaQuery.of(context).size.height * 0.6,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('AI Suggestion', style: Theme.of(context).textTheme.titleLarge),
-                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
-                  ],
-                ),
-                const Divider(),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Text(response),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text('Discard'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () {
-                          _contentController.text += '\n\n---\nAI Suggestion:\n$response';
-                          Navigator.pop(ctx);
-                        },
-                        child: const Text('Append to Note'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('AI Error: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _isAIProcessing = false);
+  Future<bool> _onWillPop() async {
+    if (_titleController.text.isEmpty && _contentController.text.isEmpty) {
+      return true;
     }
+    if (_isEditing) {
+      final note = ObjectBoxStore.getNoteById(widget.noteId!);
+      if (note != null &&
+          note.title == _titleController.text &&
+          note.content == _contentController.text) {
+        return true;
+      }
+    }
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Discard changes?'),
+        content: const Text('You have unsaved changes.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Discard')),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Note'),
-        actions: [
-          if (_isAIProcessing)
-            const Center(child: Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.auto_awesome),
-            onSelected: _askAI,
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'summarize', child: Text('Summarize')),
-              const PopupMenuItem(value: 'expand', child: Text('Expand')),
-              const PopupMenuItem(value: 'fix', child: Text('Improve Writing')),
-            ],
-          ),
-          IconButton(
-            icon: _isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save),
-            onPressed: _saveNote,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(
-                hintText: 'Title',
-                border: InputBorder.none,
-                hintStyle: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final shouldPop = await _onWillPop();
+        if (shouldPop && context.mounted) Navigator.pop(context);
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(_isEditing ? 'Edit Note' : 'New Note'),
+          actions: [
+            IconButton(icon: const Icon(Icons.share), onPressed: _share, tooltip: 'Share'),
+            IconButton(
+              icon: _isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save),
+              onPressed: _isSaving ? null : _save,
+              tooltip: 'Save',
             ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: TextField(
-                controller: _contentController,
-                maxLines: null,
-                decoration: const InputDecoration(
-                  hintText: 'Start writing...',
-                  border: InputBorder.none,
-                ),
-                style: const TextStyle(fontSize: 16, height: 1.5),
+          ],
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: TextField(
+                      controller: _titleController,
+                      decoration: const InputDecoration(
+                        labelText: 'Title',
+                        border: OutlineInputBorder(),
+                      ),
+                      autofocus: !_isEditing,
+                    ),
+                  ),
+                  if (_notebooks.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedNotebookId,
+                        decoration: const InputDecoration(
+                          labelText: 'Notebook',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('None')),
+                          ..._notebooks.map((n) => DropdownMenuItem(
+                                value: n.notebookId,
+                                child: Text(n.name),
+                              )),
+                        ],
+                        onChanged: (v) => setState(() => _selectedNotebookId = v),
+                      ),
+                    ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: TextField(
+                        controller: _contentController,
+                        decoration: const InputDecoration(
+                          hintText: 'Start writing...',
+                          border: InputBorder.none,
+                        ),
+                        maxLines: null,
+                        expands: true,
+                        textAlignVertical: TextAlignVertical.top,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ),
-        ],
       ),
     );
   }

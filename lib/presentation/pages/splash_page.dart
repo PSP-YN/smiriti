@@ -23,15 +23,22 @@ class _SplashPageState extends State<SplashPage> {
   bool _needsAuth = false;
   bool _authFailed = false;
 
+  StreamSubscription<double>? _progressSub;
+
   @override
   void initState() {
     super.initState();
     _initializeApp();
   }
 
+  @override
+  void dispose() {
+    _progressSub?.cancel();
+    super.dispose();
+  }
+
   Future<void> _initializeApp() async {
-    // Listen to progress updates
-    AppInitializer.progressStream.listen((progress) {
+    _progressSub = AppInitializer.progressStream.listen((progress) {
       if (mounted) {
         setState(() {
           _progress = progress;
@@ -40,7 +47,6 @@ class _SplashPageState extends State<SplashPage> {
       }
     });
 
-    // Run all services
     final success = await AppInitializer.initialize();
 
     if (!success) {
@@ -54,7 +60,13 @@ class _SplashPageState extends State<SplashPage> {
       await Future.delayed(const Duration(seconds: 1));
     }
 
-    _navigateHome();
+    final appLockEnabled = await SecureStorageService.isAppLockEnabled();
+    if (appLockEnabled) {
+      if (mounted) setState(() => _needsAuth = true);
+      await _runBiometricAuth();
+    } else {
+      _navigateHome();
+    }
   }
 
   Future<void> _runBiometricAuth() async {
@@ -68,7 +80,6 @@ class _SplashPageState extends State<SplashPage> {
       _navigateHome();
     } else {
       setState(() => _authFailed = true);
-      // Retry after a moment
       await Future.delayed(const Duration(seconds: 1));
       if (mounted) await _runBiometricAuth();
     }
@@ -112,7 +123,6 @@ class _SplashPageState extends State<SplashPage> {
               children: [
                 const Spacer(),
 
-                // Animated logo
                 AnimatedLogo(size: 120, animate: !_hasError && !_needsAuth),
                 const SizedBox(height: 32),
 
@@ -132,7 +142,6 @@ class _SplashPageState extends State<SplashPage> {
 
                 const SizedBox(height: 48),
 
-                // Biometric auth screen
                 if (_needsAuth) ...[
                   Icon(
                     Icons.fingerprint,
@@ -155,10 +164,7 @@ class _SplashPageState extends State<SplashPage> {
                     icon: const Icon(Icons.lock_open),
                     label: const Text('Retry Authentication'),
                   ),
-                ]
-
-                // Loading progress
-                else if (!_hasError) ...[
+                ] else if (!_hasError) ...[
                   LinearProgressIndicator(
                     value: _progress,
                     backgroundColor: colorScheme.primary.withAlpha(30),
@@ -175,10 +181,7 @@ class _SplashPageState extends State<SplashPage> {
                           fontWeight: FontWeight.bold,
                         ),
                   ),
-                ]
-
-                // Error / degraded mode
-                else ...[
+                ] else ...[
                   Icon(Icons.warning_amber, size: 48, color: Colors.orange.shade400),
                   const SizedBox(height: 16),
                   Text(
@@ -200,7 +203,6 @@ class _SplashPageState extends State<SplashPage> {
 
                 const Spacer(),
 
-                // Feature pills
                 FadeAnimation(
                   delay: const Duration(milliseconds: 300),
                   child: Wrap(

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -62,7 +63,7 @@ class DownloadProgress {
   final int downloadedBytes;
   final int totalBytes;
   final double percentage;
-  final String status; // 'downloading', 'completed', 'error'
+  final String status;
   final String? error;
 
   const DownloadProgress({
@@ -81,7 +82,6 @@ class ModelManager {
   static const String _modelsDir = 'models';
   static const String _activeModelKey = 'active_model_id';
 
-  // ── Available models ──────────────────────────────────────────────────────
   static final List<ModelInfo> availableModels = [
     const ModelInfo(
       id: 'gemma-2b-q4',
@@ -124,7 +124,8 @@ class ModelManager {
   static ValueNotifier<DownloadProgress?> get progressNotifier =>
       _progressController;
 
-  // ── Storage helpers ───────────────────────────────────────────────────────
+  static StreamSubscription<List<int>>? _currentDownload;
+  static bool _cancelRequested = false;
 
   static Future<String> _getModelsDirPath() async {
     final appDir = await getApplicationDocumentsDirectory();
@@ -141,8 +142,6 @@ class ModelManager {
 
   static Future<bool> isModelDownloaded(String modelId) async =>
       (await getModelPath(modelId)) != null;
-
-  // ── Active model ──────────────────────────────────────────────────────────
 
   static Future<String?> getDefaultModelPath() async {
     final prefs = await SharedPreferences.getInstance();
@@ -170,23 +169,20 @@ class ModelManager {
     await prefs.setString(_activeModelKey, modelId);
   }
 
-  // ── Download ──────────────────────────────────────────────────────────────
+  static void cancelDownload() {
+    _cancelRequested = true;
+    _currentDownload?.cancel();
+  }
 
-  /// Returns true if there is any internet connection (WiFi or cellular).
   static Future<bool> hasInternetConnection() async {
     final result = await Connectivity().checkConnectivity();
     return result != ConnectivityResult.none;
   }
 
-  /// Returns true if the device can reach the internet, regardless of
-  /// connection type (WiFi, mobile data, ethernet, VPN, etc.).
   static Future<bool> canDownloadModel(ModelInfo model) async {
-    // Only require *some* internet — no WiFi restriction
     final hasNet = await hasInternetConnection();
     if (!hasNet) return false;
 
-    // Rough available-space check (files in models dir are .gguf, stat.size
-    // gives directory metadata size, not free disk — kept for compatibility)
     final dirPath = await _getModelsDirPath();
     final stat = await FileStat.stat(dirPath);
     if (stat.size > 0 && stat.size < model.sizeBytes) return false;
@@ -198,9 +194,9 @@ class ModelManager {
     String modelId, {
     void Function(DownloadProgress)? onProgress,
   }) async {
+    _cancelRequested = false;
     final model = availableModels.firstWhere((m) => m.id == modelId);
 
-    // Only check for internet — no WiFi-only requirement
     if (!await hasInternetConnection()) {
       throw Exception('No internet connection. Please connect to the internet and try again.');
     }
@@ -213,34 +209,52 @@ class ModelManager {
       _updateProgress(modelId, 0, model.sizeBytes, 'downloading');
 
       final request = http.Request('GET', Uri.parse(model.downloadUrl));
-      final response = await http.Client().send(request);
+      final client = http.Client();
+      final streamedResponse = await client.send(request).timeout(
+        const Duration(seconds: 300),
+      );
+      _currentDownload = streamedResponse.stream.listen(null);
 
-      if (response.statusCode != 200) {
-        throw Exception('Download failed: HTTP ${response.statusCode}');
+      if (streamedResponse.statusCode != 200) {
+        client.close();
+        throw Exception('Download failed: HTTP ${streamedResponse.statusCode}');
       }
 
-      final totalBytes = response.contentLength ?? model.sizeBytes;
+      final totalBytes = streamedResponse.contentLength ?? model.sizeBytes;
       var downloadedBytes = 0;
 
       final sink = tempFile.openWrite();
-      await for (final chunk in response.stream) {
-        sink.add(chunk);
-        downloadedBytes += chunk.length;
+      try {
+        await for (final chunk in streamedResponse.stream) {
+          if (_cancelRequested) {
+            throw Exception('Download cancelled by user');
+          }
+          sink.add(chunk);
+          downloadedBytes += chunk.length;
 
-        final pct = downloadedBytes / totalBytes * 100;
-        _updateProgress(modelId, downloadedBytes, totalBytes, 'downloading');
-        onProgress?.call(DownloadProgress(
-          modelId: modelId,
-          downloadedBytes: downloadedBytes,
-          totalBytes: totalBytes,
-          percentage: pct,
-          status: 'downloading',
-        ));
+          final pct = downloadedBytes / totalBytes * 100;
+          _updateProgress(modelId, downloadedBytes, totalBytes, 'downloading');
+          onProgress?.call(DownloadProgress(
+            modelId: modelId,
+            downloadedBytes: downloadedBytes,
+            totalBytes: totalBytes,
+            percentage: pct,
+            status: 'downloading',
+          ));
+        }
+        await sink.flush();
+      } finally {
+        await sink.close();
+        client.close();
+        _currentDownload = null;
       }
-      await sink.flush();
-      await sink.close();
 
-      // Verify checksum (skip for placeholder hashes)
+      if (_cancelRequested) {
+        await tempFile.delete();
+        _updateProgress(modelId, 0, model.sizeBytes, 'cancelled');
+        return;
+      }
+
       if (model.checksum != 'sha256_placeholder') {
         final valid = await _verifyChecksum(tempFile, model.checksum);
         if (!valid) {
@@ -260,7 +274,6 @@ class ModelManager {
         status: 'completed',
       ));
 
-      // Auto-set as active if no model is currently active
       final currentActive = await getActiveModel();
       final currentDownloaded = currentActive != null
           ? await isModelDownloaded(currentActive.id)
@@ -272,6 +285,7 @@ class ModelManager {
       _updateProgress(modelId, 0, model.sizeBytes, 'error',
           error: e.toString());
       if (await tempFile.exists()) await tempFile.delete();
+      _currentDownload = null;
       rethrow;
     }
   }
@@ -299,8 +313,6 @@ class ModelManager {
     );
   }
 
-  // ── Delete ────────────────────────────────────────────────────────────────
-
   static Future<void> deleteModel(String modelId) async {
     final path = await getModelPath(modelId);
     if (path != null) {
@@ -314,8 +326,6 @@ class ModelManager {
       await prefs.remove(_activeModelKey);
     }
   }
-
-  // ── Storage info ──────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> getStorageInfo() async {
     final dirPath = await _getModelsDirPath();
@@ -361,8 +371,6 @@ class ModelManager {
       'models': models,
     };
   }
-
-  // ── Cleanup ───────────────────────────────────────────────────────────────
 
   static Future<void> cleanupTempFiles() async {
     try {

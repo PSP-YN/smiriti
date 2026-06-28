@@ -118,7 +118,7 @@ class DocumentCard extends StatelessWidget {
                             context,
                             MaterialPageRoute(
                               builder: (_) =>
-                                  SummarizePage(documentId: document.id),
+                                  const SummarizePage(),
                             ),
                           );
                         case 'delete':
